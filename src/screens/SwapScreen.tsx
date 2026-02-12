@@ -1,21 +1,23 @@
-import { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { useState } from "react"; // React hook for editable form state.
+import { View } from "react-native"; // Layout container for grouped UI blocks.
+import { Text } from "react-native"; // Text labels and headings.
+import { TextInput } from "react-native"; // Numeric token amount fields.
+import { TouchableOpacity } from "react-native"; // Pressable controls (swap arrow/button).
+import { ScrollView } from "react-native"; // Scroll wrapper for smaller devices.
+import { StyleSheet } from "react-native"; // Optimized style definition helper.
+import { Alert } from "react-native"; // Native pop-up for validation/confirmation.
+import { Ionicons } from "@expo/vector-icons"; // Chevron and arrow icons.
 
 export function SwapScreen() {
+  // Input and output amounts shown in the two token cards.
   const [fromAmount, setFromAmount] = useState("100");
   const [toAmount, setToAmount] = useState("0.28014");
+
+  // Token symbols displayed for the "from" and "to" sides.
   const [fromToken, setFromToken] = useState("USDC");
   const [toToken, setToToken] = useState("SOL");
 
+  // Flips token sides and also swaps visible amount values.
   const swapTokens = () => {
     setFromToken(toToken);
     setToToken(fromToken);
@@ -23,6 +25,7 @@ export function SwapScreen() {
     setToAmount(fromAmount);
   };
 
+  // Basic validation + confirmation alert for the demo swap action.
   const handleSwap = () => {
     if (!fromAmount) return Alert.alert("Enter an amount");
     Alert.alert(

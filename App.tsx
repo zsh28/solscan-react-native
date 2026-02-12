@@ -1,20 +1,25 @@
-import { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { WalletScreen } from "./src/screens/WalletScreen";
-import { SwapScreen } from "./src/screens/SwapScreen";
+import { useState } from "react"; // React hook for local component state.
+import { View } from "react-native"; // Generic container for layout sections.
+import { Text } from "react-native"; // Renders text labels like tab names.
+import { TouchableOpacity } from "react-native"; // Pressable element for tab buttons.
+import { StyleSheet } from "react-native"; // Creates optimized style objects.
+import { SafeAreaProvider } from "react-native-safe-area-context"; // Provides safe-area insets to descendants.
+import { SafeAreaView } from "react-native-safe-area-context"; // Keeps UI out of notches/home indicators.
+import { Ionicons } from "@expo/vector-icons"; // Icon set used in bottom tabs.
+import { WalletScreen } from "./src/screens/WalletScreen"; // Wallet tab screen component.
+import { SwapScreen } from "./src/screens/SwapScreen"; // Swap tab screen component.
 
 export default function App() {
+  // Controls which tab content is shown in the main area.
   const [activeTab, setActiveTab] = useState<"wallet" | "swap">("wallet");
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={s.safe}>
-        {/* Screen Content */}
+        {/* Render wallet or swap screen based on selected bottom tab. */}
         {activeTab === "wallet" ? <WalletScreen /> : <SwapScreen />}
 
-        {/* Bottom Tab Bar */}
+        {/* Simple custom bottom tab bar. */}
         <View style={s.tabBar}>
           <TouchableOpacity
             style={s.tab}

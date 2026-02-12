@@ -1,16 +1,14 @@
-import { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  ScrollView,
-  ActivityIndicator,
-  StyleSheet,
-  Alert,
-  Linking,
-} from "react-native";
+import { useState } from "react"; // React hook for local screen state.
+import { View } from "react-native"; // General layout container.
+import { Text } from "react-native"; // Headings, labels, and row text.
+import { TextInput } from "react-native"; // Wallet address input field.
+import { TouchableOpacity } from "react-native"; // Pressable buttons and rows.
+import { FlatList } from "react-native"; // Efficiently renders token/transaction lists.
+import { ScrollView } from "react-native"; // Allows the full screen to scroll.
+import { ActivityIndicator } from "react-native"; // Spinner shown while loading RPC data.
+import { StyleSheet } from "react-native"; // Creates optimized style objects.
+import { Alert } from "react-native"; // Native alert dialog for errors/validation.
+import { Linking } from "react-native"; // Opens transaction URLs in browser.
 
 // ============================================
 // Solana RPC
@@ -18,6 +16,7 @@ import {
 
 const RPC = "https://api.mainnet-beta.solana.com";
 
+// Generic JSON-RPC helper used by all wallet data calls.
 const rpc = async (method: string, params: any[]) => {
   const res = await fetch(RPC, {
     method: "POST",
@@ -29,11 +28,13 @@ const rpc = async (method: string, params: any[]) => {
   return json.result;
 };
 
+// Returns SOL balance in SOL units (RPC returns lamports).
 const getBalance = async (addr: string) => {
   const result = await rpc("getBalance", [addr]);
   return result.value / 1_000_000_000;
 };
 
+// Fetches SPL token accounts for wallet and keeps only non-zero balances.
 const getTokens = async (addr: string) => {
   const result = await rpc("getTokenAccountsByOwner", [
     addr,
@@ -48,6 +49,7 @@ const getTokens = async (addr: string) => {
     .filter((t: any) => t.amount > 0);
 };
 
+// Fetches latest signatures for recent-transaction preview.
 const getTxns = async (addr: string) => {
   const sigs = await rpc("getSignaturesForAddress", [addr, { limit: 10 }]);
   return sigs.map((s: any) => ({
@@ -63,6 +65,7 @@ const getTxns = async (addr: string) => {
 
 const short = (s: string, n = 4) => `${s.slice(0, n)}...${s.slice(-n)}`;
 
+// Converts unix timestamp to a compact relative time label.
 const timeAgo = (ts: number) => {
   const sec = Math.floor(Date.now() / 1000 - ts);
   if (sec < 60) return `${sec}s ago`;
@@ -76,12 +79,18 @@ const timeAgo = (ts: number) => {
 // ============================================
 
 export function WalletScreen() {
+  // User-entered wallet address.
   const [address, setAddress] = useState("");
+  // True while RPC calls are in progress.
   const [loading, setLoading] = useState(false);
+  // SOL balance fetched from getBalance.
   const [balance, setBalance] = useState<number | null>(null);
+  // Non-zero SPL token balances for the wallet.
   const [tokens, setTokens] = useState<any[]>([]);
+  // Most recent transaction signatures + status.
   const [txns, setTxns] = useState<any[]>([]);
 
+  // Runs all wallet fetches in parallel and updates state.
   const search = async () => {
     const addr = address.trim();
     if (!addr) return Alert.alert("Enter a wallet address");
@@ -102,6 +111,7 @@ export function WalletScreen() {
     setLoading(false);
   };
 
+  // Quickly fills a known wallet for demo/testing.
   const tryExample = () => {
     setAddress("86xCnPeV69n6t3DnyGvkKobf9FdN2H9oiVDdaMpo2MMY");
   };
