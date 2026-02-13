@@ -32,3 +32,8 @@ npx expo start
 
 - React Native + Expo
 - Solana JSON-RPC (no SDK required)
+
+## Notes
+
+- Page 1 (SolScan Lite): `docs/page-1-solscan-lite/README.md`
+- Page 2 (Navigation): `docs/page-2-navigation/README.md`
