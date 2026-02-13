@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useState } from "react"; // React hook for local screen state.
 import { View } from "react-native"; // General layout container.
 import { Text } from "react-native"; // Headings, labels, and row text.
@@ -75,10 +76,12 @@ const timeAgo = (ts: number) => {
 };
 
 // ============================================
-// Wallet Screen
+// Wallet Screen (default route for /(tabs))
 // ============================================
 
-export function WalletScreen() {
+export default function WalletScreen() {
+  const router = useRouter();
+
   // User-entered wallet address.
   const [address, setAddress] = useState("");
   // True while RPC calls are in progress.
@@ -173,10 +176,19 @@ export function WalletScreen() {
             keyExtractor={(t) => t.mint}
             scrollEnabled={false}
             renderItem={({ item }) => (
-              <View style={s.row}>
+              <TouchableOpacity
+                style={s.row}
+                // Pushes /token/:mint so [mint].tsx can read it.
+                onPress={() =>
+                  router.push({
+                    pathname: "/token/[mint]",
+                    params: { mint: item.mint },
+                  })
+                }
+              >
                 <Text style={s.mint}>{short(item.mint, 6)}</Text>
                 <Text style={s.amount}>{item.amount}</Text>
-              </View>
+              </TouchableOpacity>
             )}
           />
         </>
@@ -225,6 +237,7 @@ const s = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
+    backgroundColor: "#0D0D12",
   },
   title: {
     color: "#FFFFFF",

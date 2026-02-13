@@ -8,7 +8,7 @@ import { StyleSheet } from "react-native"; // Optimized style definition helper.
 import { Alert } from "react-native"; // Native pop-up for validation/confirmation.
 import { Ionicons } from "@expo/vector-icons"; // Chevron and arrow icons.
 
-export function SwapScreen() {
+export default function SwapScreen() {
   // Input and output amounts shown in the two token cards.
   const [fromAmount, setFromAmount] = useState("100");
   const [toAmount, setToAmount] = useState("0.28014");
