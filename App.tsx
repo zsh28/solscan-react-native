@@ -3,13 +3,17 @@ import { View } from "react-native"; // Generic container for layout sections.
 import { Text } from "react-native"; // Renders text labels like tab names.
 import { TouchableOpacity } from "react-native"; // Pressable element for tab buttons.
 import { StyleSheet } from "react-native"; // Creates optimized style objects.
+import { useColorScheme } from "react-native"; // Reads system light/dark appearance.
 import { SafeAreaProvider } from "react-native-safe-area-context"; // Provides safe-area insets to descendants.
 import { SafeAreaView } from "react-native-safe-area-context"; // Keeps UI out of notches/home indicators.
 import { Ionicons } from "@expo/vector-icons"; // Icon set used in bottom tabs.
+import { StatusBar } from "expo-status-bar"; // Cross-platform status bar control.
 import { WalletScreen } from "./src/screens/WalletScreen"; // Wallet tab screen component.
 import { SwapScreen } from "./src/screens/SwapScreen"; // Swap tab screen component.
 
 export default function App() {
+  const colorScheme = useColorScheme();
+
   // Single source of truth for bottom-tab selection:
   // - "wallet" shows WalletScreen
   // - "swap" shows SwapScreen
@@ -17,6 +21,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <SafeAreaView style={s.safe}>
         {/* Conditionally render screen content from activeTab state. */}
         {activeTab === "wallet" ? <WalletScreen /> : <SwapScreen />}
