@@ -10,22 +10,26 @@ import { WalletScreen } from "./src/screens/WalletScreen"; // Wallet tab screen 
 import { SwapScreen } from "./src/screens/SwapScreen"; // Swap tab screen component.
 
 export default function App() {
-  // Controls which tab content is shown in the main area.
+  // Single source of truth for bottom-tab selection:
+  // - "wallet" shows WalletScreen
+  // - "swap" shows SwapScreen
   const [activeTab, setActiveTab] = useState<"wallet" | "swap">("wallet");
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={s.safe}>
-        {/* Render wallet or swap screen based on selected bottom tab. */}
+        {/* Conditionally render screen content from activeTab state. */}
         {activeTab === "wallet" ? <WalletScreen /> : <SwapScreen />}
 
         {/* Simple custom bottom tab bar. */}
         <View style={s.tabBar}>
           <TouchableOpacity
             style={s.tab}
+            // Pressing this tab sets activeTab to "wallet".
             onPress={() => setActiveTab("wallet")}
           >
             <Ionicons
+              // Active tab gets filled icon + green color.
               name={activeTab === "wallet" ? "wallet" : "wallet-outline"}
               size={24}
               color={activeTab === "wallet" ? "#14F195" : "#6B7280"}
@@ -37,9 +41,11 @@ export default function App() {
 
           <TouchableOpacity
             style={s.tab}
+            // Pressing this tab sets activeTab to "swap".
             onPress={() => setActiveTab("swap")}
           >
             <Ionicons
+              // Active tab gets filled icon + green color.
               name={activeTab === "swap" ? "swap-horizontal" : "swap-horizontal-outline"}
               size={24}
               color={activeTab === "swap" ? "#14F195" : "#6B7280"}
