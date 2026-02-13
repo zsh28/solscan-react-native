@@ -2,10 +2,16 @@
 
 Reference: https://docs.expo.dev/router/introduction/
 
-## What We Are Doing and Why
+## What changed and why it matters
 
-The app originally used manual screen switching in `App.tsx` with `useState`.
-Expo Router replaces that with file-based routing so each screen is a file, and navigation scales cleanly.
+The old app manually switched screens in `App.tsx` with local state.
+That works for 2 screens, but becomes hard to maintain as soon as you add detail pages, nested flows, deep links, or auth redirects.
+
+Expo Router gives you file-based navigation:
+
+- Add a file -> add a route
+- Add a folder + `_layout.tsx` -> add a navigator layer
+- Use URL paths as your navigation contract (great for deep linking)
 
 Before:
 
@@ -23,15 +29,15 @@ app/(tabs)/swap.tsx
 app/token/[mint].tsx
 ```
 
-## Step 1: Install dependencies
+## Setup checklist
+
+1) Install router-related deps
 
 ```bash
 npx expo install expo-router expo-linking expo-constants expo-status-bar react-native-screens react-native-safe-area-context
 ```
 
-## Step 2: Update package entry
-
-Set in `package.json`:
+2) Use router entry in `package.json`
 
 ```json
 {
@@ -39,9 +45,7 @@ Set in `package.json`:
 }
 ```
 
-## Step 3: Update app config
-
-In `app.json` under `expo`:
+3) Ensure router plugin and scheme in `app.json`
 
 ```json
 {
@@ -50,7 +54,7 @@ In `app.json` under `expo`:
 }
 ```
 
-## Step 4: Route file structure
+## Route tree (current app)
 
 ```text
 app/
@@ -63,87 +67,121 @@ app/
    `- [mint].tsx
 ```
 
-### Special names
+URL mapping:
 
-- `_layout.tsx`: navigator wrapper for sibling routes
-- `index.tsx`: default route in a folder
-- `(tabs)`: route group (not part of URL)
-- `[mint].tsx`: dynamic route parameter
+- `app/(tabs)/index.tsx` -> `/`
+- `app/(tabs)/swap.tsx` -> `/swap`
+- `app/token/[mint].tsx` -> `/token/:mint`
 
-## Step 5: Root layout
+## Deep mental model: nested navigators
 
-`app/_layout.tsx` uses a root `Stack` with:
+You have two navigation layers:
 
-- `(tabs)` as base navigator
-- `token/[mint]` as detail screen on top
+1) Root `Stack` in `app/_layout.tsx`
+- Registers `(tabs)` as the base screen.
+- Registers `token/[mint]` as a detail screen pushed above base.
 
-## Step 6: Tab layout
+2) Child `Tabs` in `app/(tabs)/_layout.tsx`
+- Defines wallet and swap tabs.
 
-`app/(tabs)/_layout.tsx` uses `Tabs` and defines:
+Think of it as:
 
-- `index` tab -> Wallet
-- `swap` tab -> Swap
-- tab icons and colors
+```text
+Root Stack
+|- (tabs)    <- persistent app shell
+`- token/[mint] <- pushed on top when needed
+```
 
-## Step 7: Move screens to routes
+### Why tabs disappear on token detail
 
-- `src/screens/WalletScreen.tsx` -> `app/(tabs)/index.tsx`
-- `src/screens/SwapScreen.tsx` -> `app/(tabs)/swap.tsx`
+- Because `/token/:mint` lives in the root stack, not inside `(tabs)`.
+- Stack push overlays the entire tab navigator.
+- Back pops the stack and reveals the previous tab state.
 
-Important: each route file must use `export default`.
+This is expected native behavior for “list -> detail” flows.
 
-## Step 8: Remove old entry files
+## Special route naming rules
 
-- remove `App.tsx`
-- remove `index.ts`
-- remove old `src/screens` files after migration
+- `_layout.tsx`: navigator wrapper for sibling routes.
+- `index.tsx`: default child route for its folder.
+- `(tabs)`: route group for organization; not part of URL.
+- `[mint].tsx`: dynamic segment from URL path.
 
-## Step 9: Dynamic token detail route
+## Dynamic route flow (`[mint]`)
 
-`app/token/[mint].tsx`:
-
-- reads `mint` using `useLocalSearchParams`
-- fetches token supply data
-- renders detail UI
-- supports `router.back()`
-
-## Step 10: Navigate to token detail
-
-From wallet token row press:
+From wallet screen:
 
 ```tsx
 router.push(`/token/${item.mint}`);
 ```
 
-## Step 11: Run clean
-
-```bash
-npx expo start --clear
-```
-
-## Mental model
-
-- File = route
-- Layout file = navigator wrapper
-- Route groups organize navigator structure without changing URL
-- Dynamic segments capture URL params
-
-## Navigation cheat sheet
-
-```tsx
-router.push("/swap");
-router.push(`/token/${mint}`);
-router.replace("/swap");
-router.back();
-```
+In `app/token/[mint].tsx`:
 
 ```tsx
 const { mint } = useLocalSearchParams<{ mint: string }>();
 ```
 
-## Common errors
+Execution path:
 
-- Missing default export in route file
-- Missing `(tabs)/_layout.tsx`
-- Wrong path after moving files
-- Stale Metro cache (use `--clear`)
+1. User taps token row.
+2. Router resolves `/token/<mint>` to `[mint].tsx`.
+3. Screen reads param and fetches token details.
+4. User taps back or swipes back.
+5. Stack pops and returns to wallet tab.
+
+## Navigation API behavior (important)
+
+- `router.push(path)`
+  - Adds a new history entry.
+  - Back returns to previous screen.
+
+- `router.replace(path)`
+  - Replaces current history entry.
+  - Back does not return to replaced screen.
+  - Good for login/onboarding redirects.
+
+- `router.back()`
+  - Pops one level of navigation history.
+
+- `Link`
+  - Declarative navigation in JSX for static links.
+
+## Deep linking behavior
+
+With `scheme: "solscan"`, routes can be opened externally:
+
+- `solscan://swap`
+- `solscan://token/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
+
+This is important for wallet and cross-app flows.
+
+## Practical migration steps recap
+
+1. Create route structure under `app/`.
+2. Build root stack in `app/_layout.tsx`.
+3. Build tabs in `app/(tabs)/_layout.tsx`.
+4. Move wallet/swap screens into route files.
+5. Ensure every route component is `export default`.
+6. Add dynamic token detail route.
+7. Replace token rows with `router.push`.
+8. Remove old entry files (`App.tsx`, `index.ts`).
+
+## Troubleshooting
+
+- No route found:
+  - Check file is under `app/`.
+  - Check default export exists.
+  - Check `_layout.tsx` registration names match path.
+
+- Tabs not visible:
+  - Confirm `app/(tabs)/_layout.tsx` exists.
+  - Confirm `index.tsx` route exists in `(tabs)`.
+
+- Import errors after moving screens:
+  - Fix relative paths, or use path aliases.
+
+- Stale behavior after moving routes:
+
+```bash
+npx expo start --clear
+```
