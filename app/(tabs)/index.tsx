@@ -16,8 +16,11 @@ import {
   Keyboard,
   Platform,
 } from "react-native";
-import { useWalletStore } from "../stores/wallet-store";
-import { FavoriteButton } from "../components/FavoriteButton";
+import { Ionicons } from "@expo/vector-icons";
+import { useWalletStore } from "../../stores/wallet-store";
+import { FavoriteButton } from "../../components/FavoriteButton";
+import { ConnectButton } from "../../components/ConnectButton";
+import { useWallet } from "../../hooks/useWallet";
 
 // ============================================
 // Solana RPC
@@ -92,6 +95,9 @@ export default function WalletScreen() {
   const searchHistory  = useWalletStore((s) => s.searchHistory);
   const isDevnet       = useWalletStore((s) => s.isDevnet);
 
+  // MWA wallet connection — hook manages its own local state.
+  const wallet = useWallet();
+
   const RPC = isDevnet ? DEVNET : MAINNET;
 
   // Local screen state.
@@ -152,6 +158,26 @@ export default function WalletScreen() {
 
           <Text style={s.title}>SolScan</Text>
           <Text style={s.subtitle}>Explore any Solana wallet</Text>
+
+          {/* Wallet connect row */}
+          <View style={s.walletRow}>
+            <ConnectButton
+              connected={wallet.connected}
+              connecting={wallet.connecting}
+              address={wallet.address}
+              onConnect={wallet.connect}
+              onDisconnect={wallet.disconnect}
+            />
+            {wallet.connected && (
+              <TouchableOpacity
+                style={s.sendBtn}
+                onPress={() => router.push("/send")}
+              >
+                <Ionicons name="paper-plane-outline" size={16} color="#9945FF" />
+                <Text style={s.sendBtnText}>Send</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           <View style={s.inputContainer}>
             <TextInput
@@ -319,7 +345,7 @@ const s = StyleSheet.create({
   subtitle: {
     color: "#6B7280",
     fontSize: 15,
-    marginBottom: 28,
+    marginBottom: 16,
   },
   inputContainer: {
     backgroundColor: "#16161D",
@@ -480,5 +506,27 @@ const s = StyleSheet.create({
     color: "#6B7280",
     fontSize: 12,
     marginTop: 4,
+  },
+  walletRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 28,
+  },
+  sendBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#1A0E2E",
+    borderWidth: 1,
+    borderColor: "#9945FF",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  sendBtnText: {
+    color: "#9945FF",
+    fontWeight: "600",
+    fontSize: 14,
   },
 });

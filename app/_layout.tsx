@@ -1,3 +1,7 @@
+// Polyfills must be imported before anything else so that Buffer and
+// crypto.getRandomValues are available when @solana/web3.js initialises.
+import "../polyfills";
+
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -12,6 +16,8 @@ export default function RootLayout() {
         <Stack.Screen name="token/[mint]" />
         {/* Watchlist pushed from Settings — lives above the tab layer. */}
         <Stack.Screen name="watchlist" />
+        {/* Send SOL screen — pushed from the Wallet tab when connected. */}
+        <Stack.Screen name="send" />
       </Stack>
     </SafeAreaProvider>
   );

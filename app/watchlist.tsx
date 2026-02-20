@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useWalletStore } from "./stores/wallet-store";
+import { useWalletStore } from "../stores/wallet-store";
 
 interface WatchlistItem {
   address: string;
