@@ -16,6 +16,7 @@ interface Props {
   connected: boolean;
   connecting: boolean;
   address: string | null;
+  error: string | null;
   onConnect: () => void;
   onDisconnect: () => void;
 }
@@ -26,6 +27,7 @@ export function ConnectButton({
   connected,
   connecting,
   address,
+  error,
   onConnect,
   onDisconnect,
 }: Props) {
@@ -49,10 +51,13 @@ export function ConnectButton({
   }
 
   return (
-    <TouchableOpacity style={s.btn} onPress={onConnect}>
-      <Ionicons name="wallet-outline" size={16} color="#0D0D12" />
-      <Text style={s.btnText}>Connect Wallet</Text>
-    </TouchableOpacity>
+    <View>
+      <TouchableOpacity style={s.btn} onPress={onConnect}>
+        <Ionicons name="wallet-outline" size={16} color="#0D0D12" />
+        <Text style={s.btnText}>Connect Wallet</Text>
+      </TouchableOpacity>
+      {error ? <Text style={s.errorText}>{error}</Text> : null}
+    </View>
   );
 }
 
@@ -102,5 +107,11 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontFamily: "monospace",
     fontWeight: "600",
+  },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 11,
+    marginTop: 4,
+    maxWidth: 200,
   },
 });

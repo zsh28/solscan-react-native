@@ -1,4 +1,4 @@
-// app/watchlist.tsx
+// app/(tabs)/watchlist.tsx
 // watchlist screen - shows saved wallet addresses with balances
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -13,8 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useWalletStore } from "../stores/wallet-store";
+import { useWalletStore } from "../../stores/wallet-store";
 
 interface WatchlistItem {
   address: string;
@@ -23,13 +22,11 @@ interface WatchlistItem {
 }
 
 export default function WatchlistScreen() {
-  const router = useRouter();
-
   const favorites      = useWalletStore((s) => s.favorites);
   const removeFavorite = useWalletStore((s) => s.removeFavorite);
   const isDevnet       = useWalletStore((s) => s.isDevnet);
 
-  const [items, setItems]         = useState<WatchlistItem[]>([]);
+  const [items, setItems]           = useState<WatchlistItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const RPC = isDevnet
@@ -88,10 +85,6 @@ export default function WatchlistScreen() {
   return (
     <SafeAreaView style={s.safe} edges={["top"]}>
       <View style={s.container}>
-        <TouchableOpacity style={s.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-
         <Text style={s.title}>Watchlist</Text>
         <Text style={s.subtitle}>
           {favorites.length} wallet{favorites.length !== 1 ? "s" : ""} ·{" "}
@@ -122,7 +115,6 @@ export default function WatchlistScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={s.card}
-                // Long-press to remove — a common mobile pattern.
                 onLongPress={() => {
                   Alert.alert(
                     "Remove from Watchlist?",
@@ -179,9 +171,6 @@ const s = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
-  },
-  backButton: {
-    marginBottom: 16,
   },
   title: {
     color: "#FFFFFF",

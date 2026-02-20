@@ -12,6 +12,10 @@ interface WalletState {
   searchHistory: string[];   // recently searched addresses (newest first)
   isDevnet: boolean;         // true = Devnet RPC, false = Mainnet RPC
 
+  // Hydration flag — false until persist middleware has loaded from storage.
+  // Read this before rendering counts that depend on persisted data.
+  _hasHydrated: boolean;
+
   // Actions
   addFavorite: (address: string) => void;
   removeFavorite: (address: string) => void;
@@ -19,6 +23,7 @@ interface WalletState {
   addToHistory: (address: string) => void;
   clearHistory: () => void;
   toggleNetwork: () => void;
+  setHasHydrated: (value: boolean) => void;
 }
 
 // ============================================
@@ -32,11 +37,12 @@ export const useWalletStore = create<WalletState>()(
       favorites: [],
       searchHistory: [],
       isDevnet: false,
+      _hasHydrated: false,
 
       addFavorite: (address) =>
         set((state) => ({
           favorites: state.favorites.includes(address)
-            ? state.favorites // already saved, skip
+            ? state.favorites
             : [address, ...state.favorites],
         })),
 
@@ -45,26 +51,35 @@ export const useWalletStore = create<WalletState>()(
           favorites: state.favorites.filter((a) => a !== address),
         })),
 
-      // Reads current state without triggering a re-render.
       isFavorite: (address) => get().favorites.includes(address),
 
       addToHistory: (address) =>
         set((state) => ({
           searchHistory: [
             address,
-            // Remove any earlier occurrence so the latest is always first.
             ...state.searchHistory.filter((a) => a !== address),
-          ].slice(0, 20), // cap at 20 entries
+          ].slice(0, 20),
         })),
 
       clearHistory: () => set({ searchHistory: [] }),
 
       toggleNetwork: () =>
         set((state) => ({ isDevnet: !state.isDevnet })),
+
+      setHasHydrated: (value) => set({ _hasHydrated: value }),
     }),
     {
-      name: "wallet-storage",                    // MMKV key
+      name: "wallet-storage",
       storage: createJSONStorage(() => mmkvStorage),
+      // _hasHydrated is runtime-only — never write it to storage.
+      partialize: (state) => ({
+        favorites: state.favorites,
+        searchHistory: state.searchHistory,
+        isDevnet: state.isDevnet,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

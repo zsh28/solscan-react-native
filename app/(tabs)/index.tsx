@@ -16,11 +16,12 @@ import {
   Keyboard,
   Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useWalletStore } from "../../stores/wallet-store";
 import { FavoriteButton } from "../../components/FavoriteButton";
 import { ConnectButton } from "../../components/ConnectButton";
-import { useWallet } from "../../hooks/useWallet";
+import { useWallet } from "../../context/WalletContext";
 
 // ============================================
 // Solana RPC
@@ -140,14 +141,15 @@ export default function WalletScreen() {
   };
 
   return (
-    // Dismiss keyboard when tapping outside any input.
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      {/* Push content up when the keyboard opens. */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1, backgroundColor: "#0D0D12" }}
-      >
-        <ScrollView style={s.scroll} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#0D0D12" }} edges={["top"]}>
+      {/* Dismiss keyboard when tapping outside any input. */}
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        {/* Push content up when the keyboard opens. */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <ScrollView style={s.scroll} keyboardShouldPersistTaps="handled">
 
           {/* Devnet banner — only visible when the toggle is on. */}
           {isDevnet && (
@@ -165,6 +167,7 @@ export default function WalletScreen() {
               connected={wallet.connected}
               connecting={wallet.connecting}
               address={wallet.address}
+              error={wallet.error}
               onConnect={wallet.connect}
               onDisconnect={wallet.disconnect}
             />
@@ -304,8 +307,9 @@ export default function WalletScreen() {
 
           <View style={{ height: 100 }} />
         </ScrollView>
-      </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
+    </SafeAreaView>
   );
 }
 

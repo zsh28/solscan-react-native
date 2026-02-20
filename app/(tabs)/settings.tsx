@@ -5,18 +5,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import { useWalletStore } from "../../stores/wallet-store";
 
 export default function SettingsScreen() {
-  const router = useRouter();
-
-  const isDevnet      = useWalletStore((s) => s.isDevnet);
+  const hasHydrated  = useWalletStore((s) => s._hasHydrated);
+  const isDevnet     = useWalletStore((s) => s.isDevnet);
   const toggleNetwork = useWalletStore((s) => s.toggleNetwork);
-  const favorites     = useWalletStore((s) => s.favorites);
+  const favorites    = useWalletStore((s) => s.favorites);
   const searchHistory = useWalletStore((s) => s.searchHistory);
   const clearHistory  = useWalletStore((s) => s.clearHistory);
 
@@ -36,61 +35,57 @@ export default function SettingsScreen() {
       <View style={s.container}>
         <Text style={s.title}>Settings</Text>
 
-        {/* ── Network ─────────────────────────────── */}
-        <Text style={s.sectionLabel}>Network</Text>
-
-        <View style={s.row}>
-          <View style={s.rowLeft}>
-            <Text style={s.rowLabel}>Use Devnet</Text>
-            <Text style={s.rowSublabel}>
-              {isDevnet ? "Testing network (free SOL)" : "Real network"}
-            </Text>
+        {/* Show a spinner until Zustand has loaded persisted data from MMKV. */}
+        {!hasHydrated ? (
+          <View style={s.loadingContainer}>
+            <ActivityIndicator color="#14F195" />
           </View>
-          <Switch
-            value={isDevnet}
-            onValueChange={toggleNetwork}
-            trackColor={{ true: "#14F195", false: "#333" }}
-            thumbColor="#FFFFFF"
-          />
-        </View>
+        ) : (
+          <>
+            {/* ── Network ─────────────────────────────── */}
+            <Text style={s.sectionLabel}>Network</Text>
 
-        {/* ── Stats ───────────────────────────────── */}
-        <Text style={s.sectionLabel}>Stats</Text>
+            <View style={s.row}>
+              <View style={s.rowLeft}>
+                <Text style={s.rowLabel}>Use Devnet</Text>
+                <Text style={s.rowSublabel}>
+                  {isDevnet ? "Testing network (free SOL)" : "Real network"}
+                </Text>
+              </View>
+              <Switch
+                value={isDevnet}
+                onValueChange={toggleNetwork}
+                trackColor={{ true: "#14F195", false: "#333" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
 
-        <View style={s.row}>
-          <Text style={s.rowLabel}>Saved Wallets</Text>
-          <View style={s.badge}>
-            <Text style={s.badgeText}>{favorites.length}</Text>
-          </View>
-        </View>
+            {/* ── Stats ───────────────────────────────── */}
+            <Text style={s.sectionLabel}>Stats</Text>
 
-        <View style={s.row}>
-          <Text style={s.rowLabel}>Search History</Text>
-          <View style={s.badge}>
-            <Text style={s.badgeText}>{searchHistory.length}</Text>
-          </View>
-        </View>
+            <View style={s.row}>
+              <Text style={s.rowLabel}>Saved Wallets</Text>
+              <View style={s.badge}>
+                <Text style={s.badgeText}>{favorites.length}</Text>
+              </View>
+            </View>
 
-        {/* ── Watchlist shortcut ───────────────────── */}
-        <Text style={s.sectionLabel}>Watchlist</Text>
+            <View style={s.row}>
+              <Text style={s.rowLabel}>Search History</Text>
+              <View style={s.badge}>
+                <Text style={s.badgeText}>{searchHistory.length}</Text>
+              </View>
+            </View>
 
-        <TouchableOpacity style={s.row} onPress={() => router.push("/watchlist")}>
-          <View style={s.rowLeft}>
-            <Text style={s.rowLabel}>View Watchlist</Text>
-            <Text style={s.rowSublabel}>
-              {favorites.length} wallet{favorites.length !== 1 ? "s" : ""} saved
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#6B7280" />
-        </TouchableOpacity>
+            {/* ── Danger zone ─────────────────────────── */}
+            <Text style={s.sectionLabel}>Data</Text>
 
-        {/* ── Danger zone ─────────────────────────── */}
-        <Text style={s.sectionLabel}>Data</Text>
-
-        <TouchableOpacity style={s.dangerRow} onPress={handleClearHistory}>
-          <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 10 }} />
-          <Text style={s.dangerText}>Clear Search History</Text>
-        </TouchableOpacity>
+            <TouchableOpacity style={s.dangerRow} onPress={handleClearHistory}>
+              <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 10 }} />
+              <Text style={s.dangerText}>Clear Search History</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -109,6 +104,11 @@ const s = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   title: {
     color: "#FFFFFF",

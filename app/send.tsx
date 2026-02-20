@@ -20,7 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useWallet } from "../hooks/useWallet";
+import { useWallet } from "../context/WalletContext";
 
 export default function SendScreen() {
   const router = useRouter();
