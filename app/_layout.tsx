@@ -10,6 +10,8 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         {/* Dynamic token details route pushed on top of tabs. */}
         <Stack.Screen name="token/[mint]" />
+        {/* Watchlist pushed from Settings — lives above the tab layer. */}
+        <Stack.Screen name="watchlist" />
       </Stack>
     </SafeAreaProvider>
   );

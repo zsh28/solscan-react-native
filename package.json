@@ -4,8 +4,10 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo run:android",
+    "dev": "expo start",
+    "prebuild": "expo prebuild --clean",
     "ios": "expo run:ios",
+    "android": "expo run:android",
     "web": "expo start --web"
   },
   "dependencies": {
@@ -17,8 +19,10 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-mmkv": "^4.1.2",
     "react-native-safe-area-context": "~5.6.0",
-    "react-native-screens": "~4.16.0"
+    "react-native-screens": "~4.16.0",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",

@@ -1,25 +1,34 @@
 import { useRouter } from "expo-router";
-import { useState } from "react"; // React hook for local screen state.
-import { View } from "react-native"; // General layout container.
-import { Text } from "react-native"; // Headings, labels, and row text.
-import { TextInput } from "react-native"; // Wallet address input field.
-import { TouchableOpacity } from "react-native"; // Pressable buttons and rows.
-import { FlatList } from "react-native"; // Efficiently renders token/transaction lists.
-import { ScrollView } from "react-native"; // Allows the full screen to scroll.
-import { ActivityIndicator } from "react-native"; // Spinner shown while loading RPC data.
-import { StyleSheet } from "react-native"; // Creates optimized style objects.
-import { Alert } from "react-native"; // Native alert dialog for errors/validation.
-import { Linking } from "react-native"; // Opens transaction URLs in browser.
+import { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  ScrollView,
+  ActivityIndicator,
+  StyleSheet,
+  Alert,
+  Linking,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
+  Platform,
+} from "react-native";
+import { useWalletStore } from "../stores/wallet-store";
+import { FavoriteButton } from "../components/FavoriteButton";
 
 // ============================================
 // Solana RPC
 // ============================================
 
-const RPC = "https://api.mainnet-beta.solana.com";
+// RPC endpoint is driven by the global devnet toggle.
+const MAINNET = "https://api.mainnet-beta.solana.com";
+const DEVNET  = "https://api.devnet.solana.com";
 
-// Generic JSON-RPC helper used by all wallet data calls.
-const rpc = async (method: string, params: any[]) => {
-  const res = await fetch(RPC, {
+const rpc = async (endpoint: string, method: string, params: any[]) => {
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
@@ -29,15 +38,13 @@ const rpc = async (method: string, params: any[]) => {
   return json.result;
 };
 
-// Returns SOL balance in SOL units (RPC returns lamports).
-const getBalance = async (addr: string) => {
-  const result = await rpc("getBalance", [addr]);
+const getBalance = async (endpoint: string, addr: string) => {
+  const result = await rpc(endpoint, "getBalance", [addr]);
   return result.value / 1_000_000_000;
 };
 
-// Fetches SPL token accounts for wallet and keeps only non-zero balances.
-const getTokens = async (addr: string) => {
-  const result = await rpc("getTokenAccountsByOwner", [
+const getTokens = async (endpoint: string, addr: string) => {
+  const result = await rpc(endpoint, "getTokenAccountsByOwner", [
     addr,
     { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
     { encoding: "jsonParsed" },
@@ -50,9 +57,8 @@ const getTokens = async (addr: string) => {
     .filter((t: any) => t.amount > 0);
 };
 
-// Fetches latest signatures for recent-transaction preview.
-const getTxns = async (addr: string) => {
-  const sigs = await rpc("getSignaturesForAddress", [addr, { limit: 10 }]);
+const getTxns = async (endpoint: string, addr: string) => {
+  const sigs = await rpc(endpoint, "getSignaturesForAddress", [addr, { limit: 10 }]);
   return sigs.map((s: any) => ({
     sig: s.signature,
     time: s.blockTime,
@@ -66,7 +72,6 @@ const getTxns = async (addr: string) => {
 
 const short = (s: string, n = 4) => `${s.slice(0, n)}...${s.slice(-n)}`;
 
-// Converts unix timestamp to a compact relative time label.
 const timeAgo = (ts: number) => {
   const sec = Math.floor(Date.now() / 1000 - ts);
   if (sec < 60) return `${sec}s ago`;
@@ -82,149 +87,199 @@ const timeAgo = (ts: number) => {
 export default function WalletScreen() {
   const router = useRouter();
 
-  // User-entered wallet address.
-  const [address, setAddress] = useState("");
-  // True while RPC calls are in progress.
-  const [loading, setLoading] = useState(false);
-  // SOL balance fetched from getBalance.
-  const [balance, setBalance] = useState<number | null>(null);
-  // Non-zero SPL token balances for the wallet.
-  const [tokens, setTokens] = useState<any[]>([]);
-  // Most recent transaction signatures + status.
-  const [txns, setTxns] = useState<any[]>([]);
+  // Global store — only subscribe to the slices this screen needs.
+  const addToHistory   = useWalletStore((s) => s.addToHistory);
+  const searchHistory  = useWalletStore((s) => s.searchHistory);
+  const isDevnet       = useWalletStore((s) => s.isDevnet);
 
-  // Runs all wallet fetches in parallel and updates state.
-  const search = async () => {
-    const addr = address.trim();
-    if (!addr) return Alert.alert("Enter a wallet address");
+  const RPC = isDevnet ? DEVNET : MAINNET;
+
+  // Local screen state.
+  const [address, setAddress] = useState("");
+  const [loading, setLoading]  = useState(false);
+  const [balance, setBalance]  = useState<number | null>(null);
+  const [tokens, setTokens]    = useState<any[]>([]);
+  const [txns, setTxns]        = useState<any[]>([]);
+
+  // The wallet address that produced the current results (used for FavoriteButton).
+  const [searchedAddress, setSearchedAddress] = useState("");
+
+  const search = async (addr?: string) => {
+    const target = (addr ?? address).trim();
+    if (!target) return Alert.alert("Enter a wallet address");
+
+    // Sync input field when called from history tap.
+    if (addr) setAddress(addr);
 
     setLoading(true);
     try {
       const [bal, tok, tx] = await Promise.all([
-        getBalance(addr),
-        getTokens(addr),
-        getTxns(addr),
+        getBalance(RPC, target),
+        getTokens(RPC, target),
+        getTxns(RPC, target),
       ]);
       setBalance(bal);
       setTokens(tok);
       setTxns(tx);
+      setSearchedAddress(target);
+      addToHistory(target); // persist to global store
     } catch (e: any) {
       Alert.alert("Error", e.message);
     }
     setLoading(false);
   };
 
-  // Quickly fills a known wallet for demo/testing.
   const tryExample = () => {
     setAddress("86xCnPeV69n6t3DnyGvkKobf9FdN2H9oiVDdaMpo2MMY");
   };
 
   return (
-    <ScrollView style={s.scroll}>
-      <Text style={s.title}>SolScan</Text>
-      <Text style={s.subtitle}>Explore any Solana wallet</Text>
+    // Dismiss keyboard when tapping outside any input.
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {/* Push content up when the keyboard opens. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1, backgroundColor: "#0D0D12" }}
+      >
+        <ScrollView style={s.scroll} keyboardShouldPersistTaps="handled">
 
-      <View style={s.inputContainer}>
-        <TextInput
-          style={s.input}
-          placeholder="Enter wallet address..."
-          placeholderTextColor="#6B7280"
-          value={address}
-          onChangeText={setAddress}
-          autoCapitalize="none"
-          autoCorrect={false}
-          contextMenuHidden={false}
-          selectTextOnFocus={true}
-          editable={true}
-        />
-      </View>
-
-      <View style={s.btnRow}>
-        <TouchableOpacity
-          style={[s.btn, loading && s.btnDisabled]}
-          onPress={search}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={s.btnText}>Search</Text>
+          {/* Devnet banner — only visible when the toggle is on. */}
+          {isDevnet && (
+            <View style={s.devnetBanner}>
+              <Text style={s.devnetText}>DEVNET — Testing network</Text>
+            </View>
           )}
-        </TouchableOpacity>
 
-        <TouchableOpacity style={s.btnGhost} onPress={tryExample}>
-          <Text style={s.btnGhostText}>Demo</Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={s.title}>SolScan</Text>
+          <Text style={s.subtitle}>Explore any Solana wallet</Text>
 
-      {balance !== null && (
-        <View style={s.card}>
-          <Text style={s.label}>SOL Balance</Text>
-          <View style={s.balanceRow}>
-            <Text style={s.balance}>{balance.toFixed(4)}</Text>
-            <Text style={s.sol}>SOL</Text>
+          <View style={s.inputContainer}>
+            <TextInput
+              style={s.input}
+              placeholder="Enter wallet address..."
+              placeholderTextColor="#6B7280"
+              value={address}
+              onChangeText={setAddress}
+              autoCapitalize="none"
+              autoCorrect={false}
+              contextMenuHidden={false}
+              selectTextOnFocus={true}
+              editable={true}
+              onSubmitEditing={() => search()}
+              returnKeyType="search"
+            />
           </View>
-          <Text style={s.addr}>{short(address.trim(), 6)}</Text>
-        </View>
-      )}
 
-      {tokens.length > 0 && (
-        <>
-          <Text style={s.section}>Tokens ({tokens.length})</Text>
-          <FlatList
-            data={tokens}
-            keyExtractor={(t) => t.mint}
-            scrollEnabled={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={s.row}
-                // Pushes /token/:mint so [mint].tsx can read it.
-                onPress={() =>
-                  router.push({
-                    pathname: "/token/[mint]",
-                    params: { mint: item.mint },
-                  })
-                }
-              >
-                <Text style={s.mint}>{short(item.mint, 6)}</Text>
-                <Text style={s.amount}>{item.amount}</Text>
-              </TouchableOpacity>
-            )}
-          />
-        </>
-      )}
+          <View style={s.btnRow}>
+            <TouchableOpacity
+              style={[s.btn, loading && s.btnDisabled]}
+              onPress={() => search()}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <Text style={s.btnText}>Search</Text>
+              )}
+            </TouchableOpacity>
 
-      {txns.length > 0 && (
-        <>
-          <Text style={s.section}>Recent Transactions</Text>
-          <FlatList
-            data={txns}
-            keyExtractor={(t) => t.sig}
-            scrollEnabled={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={s.row}
-                onPress={() =>
-                  Linking.openURL(`https://solscan.io/tx/${item.sig}`)
-                }
-              >
-                <View>
-                  <Text style={s.mint}>{short(item.sig, 8)}</Text>
-                  <Text style={s.time}>
-                    {item.time ? timeAgo(item.time) : "pending"}
+            <TouchableOpacity style={s.btnGhost} onPress={tryExample}>
+              <Text style={s.btnGhostText}>Demo</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search history — shown when there are no current results yet. */}
+          {searchHistory.length > 0 && balance === null && (
+            <View style={s.historySection}>
+              <Text style={s.historyTitle}>Recent Searches</Text>
+              {searchHistory.slice(0, 5).map((addr) => (
+                <TouchableOpacity
+                  key={addr}
+                  style={s.historyItem}
+                  onPress={() => search(addr)}
+                >
+                  <Text style={s.historyAddress} numberOfLines={1}>
+                    {short(addr, 8)}
                   </Text>
-                </View>
-                <Text style={{ color: item.ok ? "#14F195" : "#EF4444", fontSize: 18 }}>
-                  {item.ok ? "+" : "-"}
-                </Text>
-              </TouchableOpacity>
-            )}
-          />
-        </>
-      )}
+                  <Text style={s.historyArrow}>›</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-      <View style={{ height: 100 }} />
-    </ScrollView>
+          {/* Balance card with favorite button. */}
+          {balance !== null && (
+            <View style={s.card}>
+              <View style={s.cardHeader}>
+                <Text style={s.label}>SOL Balance</Text>
+                <FavoriteButton address={searchedAddress} />
+              </View>
+              <View style={s.balanceRow}>
+                <Text style={s.balance}>{balance.toFixed(4)}</Text>
+                <Text style={s.sol}>SOL</Text>
+              </View>
+              <Text style={s.addr}>{short(searchedAddress, 6)}</Text>
+            </View>
+          )}
+
+          {tokens.length > 0 && (
+            <>
+              <Text style={s.section}>Tokens ({tokens.length})</Text>
+              <FlatList
+                data={tokens}
+                keyExtractor={(t) => t.mint}
+                scrollEnabled={false}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={s.row}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/token/[mint]",
+                        params: { mint: item.mint },
+                      })
+                    }
+                  >
+                    <Text style={s.mint}>{short(item.mint, 6)}</Text>
+                    <Text style={s.amount}>{item.amount}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </>
+          )}
+
+          {txns.length > 0 && (
+            <>
+              <Text style={s.section}>Recent Transactions</Text>
+              <FlatList
+                data={txns}
+                keyExtractor={(t) => t.sig}
+                scrollEnabled={false}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={s.row}
+                    onPress={() =>
+                      Linking.openURL(`https://solscan.io/tx/${item.sig}`)
+                    }
+                  >
+                    <View>
+                      <Text style={s.mint}>{short(item.sig, 8)}</Text>
+                      <Text style={s.time}>
+                        {item.time ? timeAgo(item.time) : "pending"}
+                      </Text>
+                    </View>
+                    <Text style={{ color: item.ok ? "#14F195" : "#EF4444", fontSize: 18 }}>
+                      {item.ok ? "+" : "-"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </>
+          )}
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -238,6 +293,22 @@ const s = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 16,
     backgroundColor: "#0D0D12",
+  },
+  devnetBanner: {
+    backgroundColor: "#1E1E28",
+    borderWidth: 1,
+    borderColor: "#9945FF",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    alignSelf: "flex-start",
+  },
+  devnetText: {
+    color: "#9945FF",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.5,
   },
   title: {
     color: "#FFFFFF",
@@ -295,6 +366,39 @@ const s = StyleSheet.create({
     color: "#9CA3AF",
     fontSize: 15,
   },
+  historySection: {
+    marginTop: 24,
+  },
+  historyTitle: {
+    color: "#6B7280",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  historyItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#16161D",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2A2A35",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  historyAddress: {
+    color: "#9945FF",
+    fontFamily: "monospace",
+    fontSize: 13,
+    flex: 1,
+  },
+  historyArrow: {
+    color: "#6B7280",
+    fontSize: 18,
+    marginLeft: 8,
+  },
   card: {
     backgroundColor: "#16161D",
     borderRadius: 24,
@@ -303,6 +407,13 @@ const s = StyleSheet.create({
     marginTop: 28,
     borderWidth: 1,
     borderColor: "#2A2A35",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginBottom: 4,
   },
   label: {
     color: "#6B7280",
