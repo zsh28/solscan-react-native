@@ -15,24 +15,83 @@ export const TOKENS = {
 
 export type TokenSymbol = keyof typeof TOKENS;
 
+/** Unified token descriptor — works for both preset and custom tokens. */
 export interface TokenInfo {
-  symbol: TokenSymbol;
+  /** Display symbol, e.g. "SOL", "USDC", or custom token's symbol. */
+  symbol: string;
+  /** Solana mint address (base58). */
   mint: string;
   decimals: number;
+  /** Brand color used as a placeholder / tint while the logo loads. */
   color: string;
+  /** Human-readable name, e.g. "Solana", "USD Coin". */
   label: string;
+  /** Remote logo URI — null means show a colored placeholder circle. */
+  logoUri: string | null;
 }
 
+const TOKEN_LIST_CDN = "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet";
+
 export const TOKEN_INFO: Record<TokenSymbol, TokenInfo> = {
-  SOL:  { symbol: "SOL",  mint: TOKENS.SOL,  decimals: 9, color: "#9945FF", label: "Solana"   },
-  USDC: { symbol: "USDC", mint: TOKENS.USDC, decimals: 6, color: "#2775CA", label: "USD Coin"  },
-  USDT: { symbol: "USDT", mint: TOKENS.USDT, decimals: 6, color: "#26A17B", label: "Tether"    },
-  BONK: { symbol: "BONK", mint: TOKENS.BONK, decimals: 5, color: "#F7931A", label: "Bonk"      },
-  JUP:  { symbol: "JUP",  mint: TOKENS.JUP,  decimals: 6, color: "#14F195", label: "Jupiter"   },
-  WIF:  { symbol: "WIF",  mint: TOKENS.WIF,  decimals: 6, color: "#E0B354", label: "dogwifhat" },
+  SOL: {
+    symbol: "SOL", mint: TOKENS.SOL, decimals: 9, color: "#9945FF", label: "Solana",
+    logoUri: `${TOKEN_LIST_CDN}/So11111111111111111111111111111111111111112/logo.png`,
+  },
+  USDC: {
+    symbol: "USDC", mint: TOKENS.USDC, decimals: 6, color: "#2775CA", label: "USD Coin",
+    logoUri: `${TOKEN_LIST_CDN}/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png`,
+  },
+  USDT: {
+    symbol: "USDT", mint: TOKENS.USDT, decimals: 6, color: "#26A17B", label: "Tether",
+    logoUri: `${TOKEN_LIST_CDN}/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.svg`,
+  },
+  BONK: {
+    symbol: "BONK", mint: TOKENS.BONK, decimals: 5, color: "#F7931A", label: "Bonk",
+    logoUri: "https://assets.coingecko.com/coins/images/28600/large/bonk.jpg",
+  },
+  JUP: {
+    symbol: "JUP", mint: TOKENS.JUP, decimals: 6, color: "#14F195", label: "Jupiter",
+    logoUri: "https://static.jup.ag/jup/icon.png",
+  },
+  WIF: {
+    symbol: "WIF", mint: TOKENS.WIF, decimals: 6, color: "#E0B354", label: "dogwifhat",
+    logoUri: "https://assets.coingecko.com/coins/images/33566/large/dogwifhat.jpg",
+  },
 };
 
 export const TOKEN_LIST: TokenSymbol[] = ["SOL", "USDC", "USDT", "BONK", "JUP", "WIF"];
+
+// Build a mint → TokenInfo reverse-lookup for the preset tokens.
+const PRESET_BY_MINT: Record<string, TokenInfo> = {};
+for (const info of Object.values(TOKEN_INFO)) {
+  PRESET_BY_MINT[info.mint] = info;
+}
+
+/**
+ * Return a TokenInfo for any mint address.
+ *
+ * - Preset tokens (SOL, USDC, …) are returned immediately from TOKEN_INFO.
+ * - Custom tokens previously looked up and stored in the Zustand store are
+ *   passed in via `customTokens`; the caller is responsible for providing them.
+ * - Returns null when the mint is not found in either source (caller should
+ *   trigger a lookup via `lookupToken` from services/tokenLookup.ts).
+ */
+export function resolveTokenInfo(
+  mint: string,
+  customTokens: Array<{ mint: string; symbol: string; name: string; decimals: number; logoUri: string | null; color: string }>
+): TokenInfo | null {
+  if (PRESET_BY_MINT[mint]) return PRESET_BY_MINT[mint];
+  const custom = customTokens.find((t) => t.mint === mint);
+  if (!custom) return null;
+  return {
+    symbol: custom.symbol,
+    mint: custom.mint,
+    decimals: custom.decimals,
+    color: custom.color,
+    label: custom.name,
+    logoUri: custom.logoUri,
+  };
+}
 
 // ─── Unit helpers ─────────────────────────────────────────────────────────────
 

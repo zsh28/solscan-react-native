@@ -6,11 +6,22 @@ import { mmkvStorage } from "../lib/storage";
 // Types
 // ============================================
 
+/** Metadata for a user-added custom token (looked up via token.jup.ag). */
+export interface CustomToken {
+  mint: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoUri: string | null;
+  color: string;
+}
+
 interface WalletState {
   // Persisted data
-  favorites: string[];       // saved wallet addresses
-  searchHistory: string[];   // recently searched addresses (newest first)
-  isDevnet: boolean;         // true = Devnet RPC, false = Mainnet RPC
+  favorites: string[];         // saved wallet addresses
+  searchHistory: string[];     // recently searched addresses (newest first)
+  isDevnet: boolean;           // true = Devnet RPC, false = Mainnet RPC
+  customTokens: CustomToken[]; // user-added tokens by CA (newest first)
 
   // Hydration flag — false until persist middleware has loaded from storage.
   // Read this before rendering counts that depend on persisted data.
@@ -24,6 +35,8 @@ interface WalletState {
   clearHistory: () => void;
   toggleNetwork: () => void;
   setHasHydrated: (value: boolean) => void;
+  addCustomToken: (token: CustomToken) => void;
+  removeCustomToken: (mint: string) => void;
 }
 
 // ============================================
@@ -37,6 +50,7 @@ export const useWalletStore = create<WalletState>()(
       favorites: [],
       searchHistory: [],
       isDevnet: false,
+      customTokens: [],
       _hasHydrated: false,
 
       addFavorite: (address) =>
@@ -67,6 +81,19 @@ export const useWalletStore = create<WalletState>()(
         set((state) => ({ isDevnet: !state.isDevnet })),
 
       setHasHydrated: (value) => set({ _hasHydrated: value }),
+
+      addCustomToken: (token) =>
+        set((state) => ({
+          customTokens: [
+            token,
+            ...state.customTokens.filter((t) => t.mint !== token.mint),
+          ],
+        })),
+
+      removeCustomToken: (mint) =>
+        set((state) => ({
+          customTokens: state.customTokens.filter((t) => t.mint !== mint),
+        })),
     }),
     {
       name: "wallet-storage",
@@ -76,6 +103,7 @@ export const useWalletStore = create<WalletState>()(
         favorites: state.favorites,
         searchHistory: state.searchHistory,
         isDevnet: state.isDevnet,
+        customTokens: state.customTokens,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
