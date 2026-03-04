@@ -1,158 +1,86 @@
-# State Management
+# State Management (Zustand)
 
 Reference: https://zustand.docs.pmnd.rs/
 
-## The problem with local state only
+## When to introduce global state
 
-Each screen manages its own `useState`. That works for a single screen, but breaks as soon as two screens need the same data.
+Use local `useState` for screen-only state.
 
-Examples:
-- Explorer tab favorites a wallet → Settings tab has no idea.
-- Devnet toggle changed in Settings → Explorer still hits mainnet RPC.
-- Search history lives in Explorer → can't be cleared from Settings.
+Use global state when:
 
-The fix is global state: one store any screen can read and write.
+- multiple screens need shared data
+- settings should affect behavior app-wide
+- you need central actions with consistent rules
 
-## Why Zustand and not Context
+## Why Zustand
 
-React Context re-renders every consumer when any value changes.
-Zustand only re-renders the component that subscribes to the specific slice that changed.
+Zustand is lightweight and selective:
 
-In a list of 100 items, Context re-renders all 100. Zustand re-renders the one that changed.
+- no provider ceremony for basic usage
+- selector-based subscriptions reduce rerenders
+- simple API (`create`, `set`, `get`)
 
-Why not Redux? Redux needs actions, reducers, dispatchers, middleware, and boilerplate files. Zustand does the same in ~30 lines.
-
-## Install
-
-```bash
-npm install zustand
-```
-
-## Store shape (`app/stores/wallet-store.ts`)
+## Example store
 
 ```tsx
 import { create } from "zustand";
 
-interface WalletState {
+type AppState = {
+  theme: "light" | "dark";
   favorites: string[];
-  searchHistory: string[];
-  isDevnet: boolean;
+  setTheme: (theme: "light" | "dark") => void;
+  addFavorite: (id: string) => void;
+  removeFavorite: (id: string) => void;
+};
 
-  addFavorite: (address: string) => void;
-  removeFavorite: (address: string) => void;
-  isFavorite: (address: string) => boolean;
-  addToHistory: (address: string) => void;
-  clearHistory: () => void;
-  toggleNetwork: () => void;
-}
-
-export const useWalletStore = create<WalletState>((set, get) => ({
+export const useAppStore = create<AppState>((set, get) => ({
+  theme: "light",
   favorites: [],
-  searchHistory: [],
-  isDevnet: false,
-
-  addFavorite: (address) =>
+  setTheme: (theme) => set({ theme }),
+  addFavorite: (id) =>
     set((state) => ({
-      favorites: state.favorites.includes(address)
-        ? state.favorites
-        : [address, ...state.favorites],
+      favorites: state.favorites.includes(id) ? state.favorites : [id, ...state.favorites],
     })),
-
-  removeFavorite: (address) =>
-    set((state) => ({
-      favorites: state.favorites.filter((a) => a !== address),
-    })),
-
-  isFavorite: (address) => get().favorites.includes(address),
-
-  addToHistory: (address) =>
-    set((state) => ({
-      searchHistory: [
-        address,
-        ...state.searchHistory.filter((a) => a !== address),
-      ].slice(0, 20),
-    })),
-
-  clearHistory: () => set({ searchHistory: [] }),
-
-  toggleNetwork: () => set((state) => ({ isDevnet: !state.isDevnet })),
+  removeFavorite: (id) =>
+    set((state) => ({ favorites: state.favorites.filter((x) => x !== id) })),
 }));
 ```
 
-Key concepts:
-- `create<WalletState>()` — creates the store with typed state.
-- `set()` — updates state. Always returns a new object, never mutates.
-- `get()` — reads current state inside an action without causing a re-render.
-- No Provider wrapper needed. Import the hook, use it anywhere.
-
-## Using the store in components
-
-Subscribe to only the slice you need. The component only re-renders when that specific value changes.
+## Example usage with selectors
 
 ```tsx
-// In Explorer (app/(tabs)/index.tsx)
-const addToHistory = useWalletStore((s) => s.addToHistory);
-const searchHistory = useWalletStore((s) => s.searchHistory);
-const isDevnet = useWalletStore((s) => s.isDevnet);
-
-// In Settings (app/(tabs)/settings.tsx)
-const isDevnet = useWalletStore((s) => s.isDevnet);
-const toggleNetwork = useWalletStore((s) => s.toggleNetwork);
-const favorites = useWalletStore((s) => s.favorites);
-const clearHistory = useWalletStore((s) => s.clearHistory);
+const theme = useAppStore((s) => s.theme);
+const setTheme = useAppStore((s) => s.setTheme);
+const favoritesCount = useAppStore((s) => s.favorites.length);
 ```
 
-Both screens share the same store instance. Toggle devnet in Settings → Explorer immediately uses the devnet RPC. No prop drilling, no Provider.
+Why selectors matter:
 
-## FavoriteButton component (`app/components/FavoriteButton.tsx`)
+- component rerenders only when selected slice changes
 
-A reusable component that reads from and writes to the store directly. The parent screen only needs to pass the wallet address.
+## Common use cases
 
-```tsx
-import { useWalletStore } from "../stores/wallet-store";
+- favorites/watchlist across tabs
+- auth/session metadata
+- app-wide feature flags
+- network/environment toggles
 
-export function FavoriteButton({ address }: { address: string }) {
-  const addFavorite    = useWalletStore((s) => s.addFavorite);
-  const removeFavorite = useWalletStore((s) => s.removeFavorite);
-  const isFavorite     = useWalletStore((s) => s.isFavorite);
+## Modeling guidance
 
-  const favorited = isFavorite(address);
+- keep state flat where possible
+- group write logic into clear action functions
+- avoid putting raw server data in global store if TanStack Query already owns it
 
-  return (
-    <TouchableOpacity onPress={() => favorited ? removeFavorite(address) : addFavorite(address)}>
-      <Ionicons name={favorited ? "heart" : "heart-outline"} size={24} color={favorited ? "#FF4545" : "#666"} />
-    </TouchableOpacity>
-  );
-}
-```
+## Interaction with data fetching
 
-Zustand updates are synchronous so the heart icon fills/unfills instantly on tap.
+Good split:
 
-## Devnet banner pattern
+- Zustand: UI and app-level client state
+- TanStack Query: server state and cache lifecycle
 
-The Explorer screen derives the RPC endpoint from the store:
+## Anti-patterns
 
-```tsx
-const MAINNET = "https://api.mainnet-beta.solana.com";
-const DEVNET  = "https://api.devnet.solana.com";
-
-const isDevnet = useWalletStore((s) => s.isDevnet);
-const RPC = isDevnet ? DEVNET : MAINNET;
-
-// Banner renders conditionally
-{isDevnet && (
-  <View style={s.devnetBanner}>
-    <Text style={s.devnetText}>DEVNET — Testing network</Text>
-  </View>
-)}
-```
-
-## File structure added
-
-```text
-app/
-|- stores/
-|  `- wallet-store.ts    global Zustand store
-`- components/
-   `- FavoriteButton.tsx heart toggle backed by the store
-```
+- storing everything globally “just in case”
+- mutating arrays/objects directly
+- subscribing to entire store in large components
+- duplicating same source of truth in local + global state

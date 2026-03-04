@@ -1,43 +1,28 @@
-# Persistent Storage
+# Persistent Storage (MMKV)
 
 Reference: https://github.com/mrousavy/react-native-mmkv
 
-## The problem
+## Why persistence matters
 
-Zustand state lives in memory. Close the app → state is gone. Users lose their favorites, search history, and devnet preference on every restart.
+Without persistence, app state resets on every app restart. This hurts UX for settings, preferences, and recently used data.
 
-The fix is persisting state to the phone's storage and rehydrating it on launch.
+Persistent storage should be used for:
+
+- user preferences
+- lightweight cached app metadata
+- recently viewed/searched items
 
 ## MMKV vs AsyncStorage
 
-|                | AsyncStorage      | MMKV              |
-|----------------|-------------------|-------------------|
-| Speed          | ~50ms per read    | ~0.01ms per read  |
-| API            | async (needs await) | synchronous     |
-| Size limit     | recommended <6MB  | handles 100MB+    |
-| Used by        | Facebook (legacy) | WeChat (2B users) |
+- MMKV: synchronous, very fast, native-backed
+- AsyncStorage: async API, simpler mental model but slower for frequent reads
 
-MMKV is synchronous — no `await`, no loading state needed for reads. For a crypto app that may eventually cache price data or full transaction history, this matters.
+Use MMKV when you need:
 
-## Install
+- low-latency reads on app startup
+- high-frequency preference access
 
-```bash
-npx expo install react-native-mmkv
-```
-
-MMKV requires a native build. It will not work in Expo Go. To run it:
-
-```bash
-npx expo run:ios
-# or
-npx expo run:android
-```
-
-A JS-only fallback (in-memory object with the same interface) keeps the app runnable in Expo Go during development. The fallback is set up automatically in `app/lib/storage.ts` via a try/catch.
-
-## Storage helper (`app/lib/storage.ts`)
-
-Adapts MMKV to the interface that Zustand's `createJSONStorage` expects:
+## Example MMKV adapter
 
 ```tsx
 import { MMKV } from "react-native-mmkv";
@@ -45,60 +30,63 @@ import { MMKV } from "react-native-mmkv";
 export const storage = new MMKV();
 
 export const mmkvStorage = {
-  getItem: (key: string): string | null => {
-    const value = storage.getString(key);
-    return value ?? null;
-  },
-
-  setItem: (key: string, value: string): void => {
-    storage.set(key, value);
-  },
-
-  removeItem: (key: string): void => {
-    storage.delete(key);
-  },
+  getItem: (key: string): string | null => storage.getString(key) ?? null,
+  setItem: (key: string, value: string): void => storage.set(key, value),
+  removeItem: (key: string): void => storage.delete(key),
 };
 ```
 
-The helper has three methods matching the `StateStorage` interface Zustand needs.
-
-## Connecting Zustand to MMKV (`app/stores/wallet-store.ts`)
-
-Wrap the store creator with `persist(...)`:
+## Example: Zustand persistence middleware
 
 ```tsx
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { mmkvStorage } from "../lib/storage";
+import { mmkvStorage } from "./storage";
 
-export const useWalletStore = create<WalletState>()(
+type SettingsState = {
+  language: "en" | "es";
+  notificationsEnabled: boolean;
+  setLanguage: (language: "en" | "es") => void;
+  setNotificationsEnabled: (value: boolean) => void;
+};
+
+export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set, get) => ({
-      // ...same store logic as before...
+    (set) => ({
+      language: "en",
+      notificationsEnabled: true,
+      setLanguage: (language) => set({ language }),
+      setNotificationsEnabled: (value) => set({ notificationsEnabled: value }),
     }),
     {
-      name: "wallet-storage",                        // key written to MMKV
-      storage: createJSONStorage(() => mmkvStorage), // adapter
+      name: "settings-storage",
+      storage: createJSONStorage(() => mmkvStorage),
     }
   )
 );
 ```
 
-What `persist` does:
-- On every `set()` call, serializes the state to JSON and writes it to MMKV.
-- On app launch, reads the JSON from MMKV and rehydrates the store before any component renders.
-- Partial persistence: you can pass a `partialize` option to only persist specific keys.
+## Production use-case patterns
 
-## Verify it works
+- onboarding completed flag
+- preferred currency/language
+- last selected network/environment
+- local feature flag overrides
 
-1. Search for a wallet and tap the heart to favorite it.
-2. Force-close the app (swipe away from the app switcher).
-3. Reopen — the favorite is still there, the devnet toggle remembers its position, the search history is intact.
+## Data you should avoid persisting blindly
 
-## File structure added
+- large response payloads better owned by query cache
+- secrets without encryption strategy
+- high-churn transient UI state
 
-```text
-app/
-`- lib/
-   `- storage.ts    MMKV instance + Zustand-compatible adapter
-```
+## Reliability guidance
+
+- version your stored schema when shape changes
+- provide migration/fallback for incompatible data
+- handle corrupted values defensively
+
+## Testing checklist
+
+1. Write value, restart app, confirm rehydration.
+2. Clear storage path and confirm sane defaults.
+3. Validate behavior after schema change.

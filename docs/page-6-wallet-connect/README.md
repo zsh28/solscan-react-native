@@ -1,224 +1,125 @@
-# Page 6 — Wallet Connection & Sending SOL
+# Wallet Connection and Sending Transactions
 
-## What we built
+## What this topic covers
 
-- Polyfill layer so `@solana/web3.js` works in Hermes (React Native's JS engine)
-- `useWallet` hook wrapping **Mobile Wallet Adapter (MWA)** — connect, disconnect, send SOL
-- `ConnectButton` component — three visual states: disconnected, connecting, connected
-- `app/send.tsx` — Send SOL screen
-- Fixed a structural bug: moved `components/`, `lib/`, `stores/` out of `app/` to the project root
+This page explains the general architecture for wallet connection flows in mobile dApps:
 
----
+- connect/disconnect UX
+- session state
+- transaction signing and sending
+- error handling and user safety
 
-## The structural bug
+## Connection lifecycle
 
-Expo Router treats **every file inside `app/`** as a route. Having non-screen files there caused:
+A robust wallet flow usually has these states:
 
-```
-WARN Route "./components/FavoriteButton.tsx" is missing the required default export
-```
+1. disconnected
+2. connecting
+3. connected
+4. error/recovering
 
-**Fix:** move all shared code to the project root.
+Design goal: every state should be visible and actionable in UI.
 
-```
-Before                   After
-─────────────────────    ──────────────────────────
-app/
-  components/            components/        ← root
-    FavoriteButton.tsx     FavoriteButton.tsx
-  lib/                   lib/               ← root
-    storage.ts             storage.ts
-  stores/                stores/            ← root
-    wallet-store.ts        wallet-store.ts
-```
-
-Import paths update accordingly:
-
-| File | Old | New |
-|------|-----|-----|
-| `app/(tabs)/index.tsx` | `../stores/wallet-store` | `../../stores/wallet-store` |
-| `app/(tabs)/settings.tsx` | `../stores/wallet-store` | `../../stores/wallet-store` |
-| `app/watchlist.tsx` | `./stores/wallet-store` | `../stores/wallet-store` |
-
----
-
-## Polyfills
-
-`@solana/web3.js` uses `Buffer` and `crypto.getRandomValues`, which Hermes doesn't ship.
-
-**`polyfills.ts`** (root):
-
-```ts
-import { Buffer } from "buffer";
-import * as ExpoCrypto from "expo-crypto";
-
-if (typeof global.Buffer === "undefined") {
-  global.Buffer = Buffer;
-}
-
-if (typeof (global.crypto as any).getRandomValues === "undefined") {
-  (global.crypto as any).getRandomValues = (array: Uint8Array) => {
-    array.set(ExpoCrypto.getRandomBytes(array.length));
-    return array;
-  };
-}
-```
-
-Import it **first** in `app/_layout.tsx`:
-
-```ts
-import "../polyfills"; // must be before any Solana import
-```
-
----
-
-## Mobile Wallet Adapter
-
-MWA is an Android-only protocol. A wallet app (Phantom, Solflare) runs a local server; your app connects via `transact()`.
-
-**Platform support:**
-
-| Environment | Works? |
-|-------------|--------|
-| Android device + Phantom | Yes |
-| Android emulator + [fakewallet APK](https://github.com/solana-mobile/mobile-wallet-adapter/releases) | Yes |
-| Expo Go | No (requires native build) |
-| iOS | No (MWA is Android-only) |
-
-Install dependencies:
-
-```bash
-npx expo install @solana/web3.js \
-  @solana-mobile/mobile-wallet-adapter-protocol \
-  @solana-mobile/mobile-wallet-adapter-protocol-web3js \
-  bs58 buffer expo-crypto
-```
-
----
-
-## `useWallet` hook
-
-Lives at `hooks/useWallet.ts`. Encapsulates all MWA calls so screens never import `transact` directly.
-
-```ts
-export function useWallet() {
-  const [state, setState] = useState<WalletState>({ ... });
-
-  const connect = useCallback(async () => {
-    await transact(async (wallet) => {
-      const { accounts } = await wallet.authorize({
-        cluster: "mainnet-beta",
-        identity: { name: "SolScan", uri: "https://solscan.io", icon: "favicon.ico" },
-      });
-      const pubkey = new PublicKey(accounts[0].address);
-      setState({ connected: true, publicKey: pubkey, address: pubkey.toBase58(), ... });
-    });
-  }, []);
-
-  const sendSol = useCallback(async (toAddress: string, amountSol: number) => {
-    const connection = new Connection(clusterApiUrl("mainnet-beta"), "confirmed");
-    const { blockhash } = await connection.getLatestBlockhash();
-    const tx = new Transaction({ recentBlockhash: blockhash, feePayer: state.publicKey })
-      .add(SystemProgram.transfer({
-        fromPubkey: state.publicKey!,
-        toPubkey: new PublicKey(toAddress),
-        lamports: Math.round(amountSol * LAMPORTS_PER_SOL),
-      }));
-
-    let sig = "";
-    await transact(async (wallet) => {
-      await wallet.authorize({ ... }); // re-authorize per session
-      const [signedTx] = await wallet.signAndSendTransactions({ transactions: [tx] });
-      sig = signedTx;
-    });
-    return sig;
-  }, [state.publicKey]);
-
-  return { ...state, connect, disconnect, sendSol };
-}
-```
-
-Key points:
-- `authorize` must be called once per `transact` session — even inside `sendSol`
-- `signAndSendTransactions` returns an array of signatures (one per tx)
-- The wallet broadcasts the transaction; you don't need to call `connection.sendRawTransaction`
-
----
-
-## `ConnectButton` component
-
-Pure presentational — receives wallet state as props, emits callbacks.
-
-```ts
-export function ConnectButton({ connected, connecting, address, onConnect, onDisconnect }: Props) {
-  if (connecting) return <Pill><Spinner /> Connecting…</Pill>;
-  if (connected)  return <Pill onPress={onDisconnect}>{short(address)} ✕</Pill>;
-  return <Button onPress={onConnect}>Connect Wallet</Button>;
-}
-```
-
-Used in `app/(tabs)/index.tsx`:
+## Recommended hook shape
 
 ```tsx
-const wallet = useWallet();
+type WalletState = {
+  connected: boolean;
+  address: string | null;
+  connecting: boolean;
+  error: string | null;
+};
 
-<View style={s.walletRow}>
-  <ConnectButton
-    connected={wallet.connected}
-    connecting={wallet.connecting}
-    address={wallet.address}
-    onConnect={wallet.connect}
-    onDisconnect={wallet.disconnect}
-  />
-  {wallet.connected && (
-    <TouchableOpacity onPress={() => router.push("/send")}>
-      <Text>Send</Text>
-    </TouchableOpacity>
-  )}
-</View>
-```
-
----
-
-## Send SOL screen
-
-`app/send.tsx` — registered in `app/_layout.tsx` as `<Stack.Screen name="send" />`.
-
-Flow:
-1. Screen checks `wallet.connected`; shows a warning if not
-2. User fills recipient address + amount
-3. Confirm alert before signing
-4. Calls `wallet.sendSol(toAddress, sol)` — opens Phantom for signing
-5. Shows success alert with signature, then navigates back
-
-```tsx
-const { connected, address, sendSol } = useWallet();
-
-const handleSend = async () => {
-  const sig = await sendSol(toAddress, parseFloat(amount));
-  Alert.alert("Sent!", sig.slice(0, 16) + "...");
+type WalletApi = WalletState & {
+  connect: () => Promise<string | null>;
+  disconnect: () => void;
+  sendTransaction: (params: { to: string; amount: number }) => Promise<string>;
 };
 ```
 
----
+Why this pattern:
 
-## File map after this session
+- keeps screen components simple
+- centralizes wallet SDK complexity
+- improves testability
 
+## Example: connect button states
+
+```tsx
+function ConnectButton({ connected, connecting, address, onConnect, onDisconnect }: {
+  connected: boolean;
+  connecting: boolean;
+  address: string | null;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  if (connecting) return <Text>Connecting...</Text>;
+  if (connected && address) return <Pressable onPress={onDisconnect}><Text>{address.slice(0, 4)}... Disconnect</Text></Pressable>;
+  return <Pressable onPress={onConnect}><Text>Connect Wallet</Text></Pressable>;
+}
 ```
-solscan-react-native/
-├── polyfills.ts                       ← NEW: Buffer + crypto polyfills
-├── hooks/
-│   └── useWallet.ts                   ← NEW: MWA connect / sendSol
-├── components/
-│   ├── FavoriteButton.tsx             ← MOVED from app/components/
-│   └── ConnectButton.tsx              ← NEW
-├── stores/
-│   └── wallet-store.ts                ← MOVED from app/stores/
-├── lib/
-│   └── storage.ts                     ← MOVED from app/lib/
-└── app/
-    ├── _layout.tsx                    ← UPDATED: polyfill import, send screen
-    ├── send.tsx                       ← NEW
-    └── (tabs)/
-        └── index.tsx                  ← UPDATED: ConnectButton + Send button
+
+## Sending transaction flow
+
+Typical sequence:
+
+1. validate input (recipient/amount)
+2. build unsigned transaction
+3. request user signature in wallet
+4. broadcast
+5. confirm and show result
+
+## Example: action wrapper
+
+```tsx
+async function handleSend() {
+  try {
+    setSubmitting(true);
+    const signature = await wallet.sendTransaction({ to: recipient, amount: 0.1 });
+    Alert.alert("Sent", `Signature: ${signature}`);
+  } catch (e: any) {
+    Alert.alert("Transaction failed", e?.message ?? "Unknown error");
+  } finally {
+    setSubmitting(false);
+  }
+}
 ```
+
+## Core use cases
+
+- connect wallet to view account data
+- approve token transfers/swaps
+- sign messages for login/auth proof
+- reconnect seamlessly on next app launch
+
+## Security and UX guidance
+
+- never auto-sign anything
+- always show clear transaction summary before approval
+- warn users about network/cluster mismatches
+- display shortened signature with link to explorer
+
+## Failure handling
+
+Handle and distinguish:
+
+- user rejected transaction
+- wallet app unavailable
+- insufficient balance
+- network timeout
+- invalid address
+
+## Platform considerations
+
+Mobile wallet adapters and deep link flows vary by platform. Always test:
+
+- real physical device
+- foreground/background transitions
+- return path to your app after signature
+
+## Production checklist
+
+1. Connection state survives screen navigation.
+2. Send action is disabled while pending.
+3. Errors are user-readable and recoverable.
+4. Success state includes verifiable signature details.

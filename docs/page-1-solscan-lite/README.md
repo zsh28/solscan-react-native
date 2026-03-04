@@ -1,147 +1,107 @@
-# SolScan Lite
+# Mobile App Foundations (Expo + React Native)
 
-Solana Wallet Balance Checker
+## What this topic covers
 
-## Part A: Project Setup and File Breakdown
+This page explains the baseline stack for building mobile apps with Expo and React Native:
 
-### What is Expo?
+- project setup
+- runtime model
+- file roles
+- common UI + data patterns
 
-Expo is a toolchain on top of React Native that removes most native setup pain.
-Without Expo, you usually configure Xcode, Android Studio, Gradle, CocoaPods, and native linking.
-With Expo, you can start quickly with one command and run on a real device via Expo Go.
+It is intentionally framework-focused and reusable across projects.
 
-### Creating the Project
+## Why Expo is a strong default
+
+Expo removes most native build setup overhead so teams can iterate on product behavior earlier.
+
+Use Expo when you want:
+
+- quick prototype-to-production path
+- one codebase for iOS and Android
+- smooth developer experience for OTA updates, assets, and tooling
+
+## Quick start commands
 
 ```bash
-npx create-expo-app SolScan --template blank-typescript
-cd SolScan
+npx create-expo-app MyApp --template blank-typescript
+cd MyApp
 npx expo start
 ```
 
-- `npx create-expo-app SolScan --template blank-typescript`: create a clean TypeScript Expo project.
-- `cd SolScan`: enter the project folder.
-- `npx expo start`: start dev server and open with Expo Go.
+## Core project files and their role
 
-### Project structure (initial)
+- `package.json`: dependencies + scripts
+- `app.json`: app metadata and native configuration
+- `tsconfig.json`: TypeScript behavior
+- `assets/`: icons, images, fonts
+- `app/` or `src/`: application screens and logic
 
-```text
-SolScan/
-|- App.tsx
-|- app.json
-|- babel.config.js
-|- tsconfig.json
-|- package.json
-|- node_modules/
-`- assets/
-```
+## React Native mental model
 
-### File roles
+Web-to-native mapping:
 
-- `App.tsx`: app entry UI (pre-router setup).
-- `app.json`: app metadata and native settings.
-- `babel.config.js`: Babel transpilation config.
-- `tsconfig.json`: TypeScript compiler rules.
-- `package.json`: dependencies and npm scripts.
-- `assets/`: icons/splash/fonts/images.
+- `div` -> `View`
+- text nodes/tags -> `Text`
+- `<input>` -> `TextInput`
+- `<button>` -> `Pressable` / `TouchableOpacity`
+- css file -> `StyleSheet.create(...)`
 
-## Part B: Running the App
-
-### Option 1: Physical phone (recommended)
-
-1. Install Expo Go (iOS/Android).
-2. Run `npx expo start`.
-3. Scan QR code.
-4. App launches on phone.
-
-### Option 2: Android emulator
-
-1. Create/start Android emulator.
-2. Run `npx expo start`.
-3. Press `a` in terminal.
-
-### Option 3: iOS simulator (macOS)
-
-1. Install Xcode.
-2. Run `npx expo start`.
-3. Press `i` in terminal.
-
-## Part C: Code Breakdown (SolScan Lite)
-
-### Imports (React Native core)
+## Example: basic searchable screen
 
 ```tsx
 import { useState } from "react";
-import {
-  SafeAreaView,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  ScrollView,
-  ActivityIndicator,
-  StyleSheet,
-  Alert,
-  Linking,
-} from "react-native";
+import { View, Text, TextInput, Pressable, ActivityIndicator, StyleSheet } from "react-native";
+
+export default function SearchScreen() {
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const onSearch = async () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    try {
+      await new Promise((r) => setTimeout(r, 600));
+      setResult(`Result for: ${query}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={s.container}>
+      <Text style={s.title}>Search</Text>
+      <TextInput value={query} onChangeText={setQuery} style={s.input} placeholder="Type here" />
+      <Pressable style={s.button} onPress={onSearch}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.buttonText}>Run</Text>}
+      </Pressable>
+      {result ? <Text style={s.result}>{result}</Text> : null}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, padding: 20, justifyContent: "center" },
+  title: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
+  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 10, padding: 12, marginBottom: 12 },
+  button: { backgroundColor: "#111827", padding: 14, borderRadius: 10, alignItems: "center" },
+  buttonText: { color: "#fff", fontWeight: "600" },
+  result: { marginTop: 16, fontSize: 16 },
+});
 ```
 
-### Solana RPC helper
+## Common early-stage pitfalls
 
-```tsx
-const RPC = "https://api.mainnet-beta.solana.com";
+- mixing too much app logic into one screen file
+- skipping loading/error states for network actions
+- overusing inline styles for large components
+- not testing on both iOS and Android early
 
-const rpc = async (method: string, params: any[]) => {
-  const res = await fetch(RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const json = await res.json();
-  if (json.error) throw new Error(json.error.message);
-  return json.result;
-};
-```
+## Recommended progression for teams
 
-### RPC methods used
-
-- `getBalance`: reads SOL balance (lamports -> SOL).
-- `getTokenAccountsByOwner`: reads SPL token accounts.
-- `getSignaturesForAddress`: reads recent transaction signatures.
-
-### Helpers used in UI
-
-- `short(value, n)`: shorten long wallet/token strings.
-- `timeAgo(ts)`: show relative time labels.
-
-### State used
-
-- `address`
-- `loading`
-- `balance`
-- `tokens`
-- `txns`
-
-### Search flow
-
-The search action validates input, sets loading state, runs all RPC calls in parallel with `Promise.all`, updates state, and handles errors with `Alert.alert`.
-
-### UI building blocks
-
-- `SafeAreaView` avoids notch/status overlap.
-- `ScrollView` enables full-page scroll.
-- `TextInput` captures wallet input.
-- `TouchableOpacity` handles press interactions.
-- `FlatList` renders token/txn lists efficiently.
-- `Linking.openURL` opens Solscan transaction links.
-
-## Part D: Quick Reference (Web vs Native)
-
-- `div` -> `View`
-- text tags -> `Text`
-- `input` -> `TextInput`
-- `button` -> `TouchableOpacity`
-- map list -> `FlatList`
-- `window.alert` -> `Alert.alert`
-- `window.open` -> `Linking.openURL`
-- CSS -> `StyleSheet.create`
+1. Build vertical slice (one flow end-to-end)
+2. Add navigation and shared state
+3. Add persistence and network caching
+4. Add animations/gestures for UX polish
+5. Add observability and error reporting

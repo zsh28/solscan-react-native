@@ -1,159 +1,153 @@
-# Page 7 — Jupiter Swap
+# Token Swap Integration Notes (Aggregator-Based)
 
-## What we built
+## What this topic covers
 
-A live token swap screen backed by the Jupiter Aggregator v6 API. Users pick input/output tokens, type an amount, and see a real-time quote update with debouncing. If a wallet is connected via MWA, tapping **Swap** builds the transaction on Jupiter's server, decodes it, and sends it to Phantom for signing.
+This page explains a general token swap integration pattern using quote + swap transaction APIs (such as Jupiter-like aggregators).
 
----
+Focus areas:
 
-## Files changed
+- quote flow
+- unit conversions
+- route quality and slippage
+- transaction construction and signing
 
-| File | What changed |
-|---|---|
-| `services/jupiter.ts` | New — token registry, unit helpers, `getSwapQuote`, `getSwapTransaction` |
-| `app/(tabs)/swap.tsx` | Full rewrite — live Jupiter quotes, token picker modal, MWA signing |
-| `context/WalletContext.tsx` | Added `signAndSendVersioned(base64Tx)` |
-| `app/(tabs)/watchlist.tsx` | Moved from `app/watchlist.tsx` — now a real tab |
-| `app/(tabs)/_layout.tsx` | Added Watchlist tab (heart icon) |
-| `app/_layout.tsx` | Removed `<Stack.Screen name="watchlist" />` |
-| `app/(tabs)/settings.tsx` | Removed "View Watchlist" row + unused imports |
+## High-level swap architecture
 
----
+A robust swap UI usually follows this sequence:
 
-## Token registry (`services/jupiter.ts`)
+1. user picks input/output tokens
+2. user enters amount
+3. app requests quote
+4. app shows output estimate + price impact + route info
+5. app requests executable swap transaction
+6. wallet signs and sends
+7. app confirms and reports result
+
+## Why aggregators are useful
+
+Aggregators search multiple liquidity sources to find better execution.
+
+Benefits:
+
+- best route discovery
+- less manual DEX integration complexity
+- route-level metadata (hops, impact, fees)
+
+## Example: quote request pattern
 
 ```ts
-export const TOKENS = {
-  SOL:  "So11111111111111111111111111111111111111112",
-  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-  BONK: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-  JUP:  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-  WIF:  "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+type QuoteParams = {
+  inputMint: string;
+  outputMint: string;
+  amount: string; // smallest unit (integer string)
+  slippageBps: number;
 };
-```
 
-Each token has a `TokenInfo` entry with `decimals`, `color`, and human `label`.
+async function fetchQuote(params: QuoteParams) {
+  const qs = new URLSearchParams({
+    inputMint: params.inputMint,
+    outputMint: params.outputMint,
+    amount: params.amount,
+    slippageBps: String(params.slippageBps),
+  });
 
-### Unit helpers
-
-```ts
-toSmallestUnit("1.5", 9)   // → 1_500_000_000  (SOL lamports)
-fromSmallestUnit(1500000, 6) // → "1.5"          (USDC)
-```
-
----
-
-## Jupiter API flow
-
-### 1. Get a quote
-
-```
-GET https://quote-api.jup.ag/v6/quote
-  ?inputMint=So11...112
-  &outputMint=EPjF...1v
-  &amount=1000000000   ← lamports
-  &slippageBps=50      ← 0.5%
-```
-
-Response includes `outAmount` (smallest unit), `priceImpactPct`, and `routePlan`.
-
-```ts
-const quote = await getSwapQuote({
-  inputMint:  TOKENS.SOL,
-  outputMint: TOKENS.USDC,
-  amount:     1_000_000_000,  // 1 SOL in lamports
-});
-// quote.outAmount → e.g. "142301234" micro-USDC
-```
-
-### 2. Build the transaction
-
-```
-POST https://quote-api.jup.ag/v6/swap
-Body: {
-  quoteResponse: <quote object>,
-  userPublicKey: "<base58>",
-  wrapAndUnwrapSol: true,
-  dynamicComputeUnitLimit: true,
-  prioritizationFeeLamports: "auto"
+  const res = await fetch(`https://example-aggregator/quote?${qs.toString()}`);
+  if (!res.ok) throw new Error("Quote failed");
+  return res.json();
 }
 ```
 
-Response: `{ swapTransaction: "<base64 versioned tx>" }`
+## Unit conversion is mandatory
 
-No API key required.
+Most swap APIs expect smallest units, not display decimals.
 
-### 3. Sign and send via MWA
+Example:
+
+- token with 6 decimals
+- user inputs `1.25`
+- API amount must be `1250000`
+
+## Example conversion helpers
 
 ```ts
-// In WalletContext.tsx — signAndSendVersioned()
-const txBytes  = Buffer.from(base64Tx, "base64");
-const versionedTx = VersionedTransaction.deserialize(txBytes);
+function toSmallestUnit(amount: string, decimals: number): string {
+  const [whole = "0", frac = ""] = amount.split(".");
+  const fracPadded = (frac + "0".repeat(decimals)).slice(0, decimals);
+  return `${whole}${fracPadded}`.replace(/^0+(?=\d)/, "");
+}
 
-await transact(async (wallet) => {
-  await wallet.authorize({ cluster: "mainnet-beta", identity: { ... } });
-  const [sig] = await wallet.signAndSendTransactions({
-    transactions: [versionedTx],
-  });
-});
+function fromSmallestUnit(raw: string, decimals: number): string {
+  const s = raw.padStart(decimals + 1, "0");
+  const whole = s.slice(0, -decimals);
+  const frac = s.slice(-decimals).replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole;
+}
 ```
 
-`VersionedTransaction` is from `@solana/web3.js` v1. MWA's `signAndSendTransactions` accepts both legacy `Transaction` and `VersionedTransaction` objects.
+## Debouncing quote requests
 
----
+Without debounce, every keystroke triggers network calls.
 
-## Debounced quoting
+Recommended:
 
-The swap screen debounces quote fetches by 600 ms to avoid hammering the API on every keystroke:
+- debounce 300ms to 700ms
+- cancel previous pending timer/request on new input
+
+## Example debounce usage
 
 ```ts
 useEffect(() => {
-  if (debounceRef.current) clearTimeout(debounceRef.current);
-  debounceRef.current = setTimeout(() => {
-    fetchQuote(fromAmount, fromToken, toToken);
-  }, 600);
-  return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-}, [fromAmount, fromToken, toToken, fetchQuote]);
+  if (!amount) return;
+  const t = setTimeout(() => {
+    requestQuote(amount, inputMint, outputMint);
+  }, 500);
+  return () => clearTimeout(t);
+}, [amount, inputMint, outputMint]);
 ```
 
----
+## Swap transaction request
 
-## Price impact colour coding
+After quote selection, request an executable transaction payload from aggregator backend.
 
-| Impact | Colour |
-|---|---|
-| < 1% | White |
-| 1–5% | Amber `#F59E0B` |
-| > 5% | Red `#EF4444` |
+Typical payload includes:
 
----
+- chosen quote response
+- user public key
+- optional SOL wrap/unwrap flag
+- optional priority fee / compute settings
 
-## Watchlist as a tab
+## UX use cases
 
-Previously the watchlist was a stack screen pushed from Settings. It is now a proper bottom tab:
+- quick swap from wallet page
+- advanced mode with token search
+- route details modal for power users
 
-```tsx
-// app/(tabs)/_layout.tsx
-<Tabs.Screen
-  name="watchlist"
-  options={{
-    title: "Watchlist",
-    tabBarIcon: ({ color, size }) => (
-      <Ionicons name="heart-outline" size={size} color={color} />
-    ),
-  }}
-/>
-```
+## Risk controls and safety
 
-The back button and `router.push("/watchlist")` call in Settings were removed.
+- enforce slippage limits per trade type
+- display price impact clearly with color coding
+- block swap when quote is stale
+- confirm token symbols and mint addresses before submit
 
----
+## Common failure cases
 
-## Key points
+- no route found
+- insufficient token balance
+- quote expired before signing
+- wallet rejected signature
+- RPC congestion/timeout
 
-- No API key is needed for Jupiter v6.
-- Always convert amounts to smallest unit before the API call; convert back to display.
-- Jupiter returns versioned (v0) transactions — use `VersionedTransaction.deserialize`, not `Transaction.from`.
-- MWA `signAndSendTransactions` works with both legacy and versioned transactions when using `@solana-mobile/mobile-wallet-adapter-protocol-web3js`.
-- Swap only works on **real Android device with Phantom installed** (MWA requirement).
+## Practical UI states
+
+- idle: no amount entered
+- quoting: loading indicator in output panel
+- quoted: output + route shown
+- submitting: swap button disabled/spinner
+- success/failure: explicit final state with explorer link
+
+## Production checklist
+
+1. Amount conversion tested for all supported decimals.
+2. Debounce and stale-quote handling implemented.
+3. Error messages map to actionable user guidance.
+4. Price impact and slippage are visible before approval.

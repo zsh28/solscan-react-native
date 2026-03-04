@@ -1,81 +1,92 @@
-# Keyboard Handling
+# Keyboard Handling (Mobile UX)
 
-## The problem
+## Why this matters
 
-On mobile, the software keyboard takes up roughly half the screen when it opens. If a `TextInput` sits near the bottom of the screen, the keyboard slides up and covers it. The user types blind.
+On mobile, the software keyboard can cover important UI (inputs, action buttons, validation messages). Good keyboard handling is essential for forms and search workflows.
 
-Two components fix this: `KeyboardAvoidingView` and `TouchableWithoutFeedback`.
+## Core building blocks
 
-## KeyboardAvoidingView
+- `KeyboardAvoidingView`: shifts/resizes content around keyboard
+- `TouchableWithoutFeedback + Keyboard.dismiss`: tap outside to close
+- `keyboardShouldPersistTaps`: controls tap behavior inside scroll views
 
-Pushes the content above the keyboard as it opens.
-
-```tsx
-import { KeyboardAvoidingView, Platform } from "react-native";
-
-<KeyboardAvoidingView
-  behavior={Platform.OS === "ios" ? "padding" : "height"}
-  style={{ flex: 1 }}
->
-  {/* Your content and TextInputs */}
-</KeyboardAvoidingView>
-```
-
-`behavior` options:
-- `"padding"` (iOS): adds bottom padding equal to the keyboard height. Pushes content up.
-- `"height"` (Android): shrinks the view height. Android handles keyboard insets differently.
-
-`Platform.OS` is `"ios"` or `"android"` at runtime. This one check handles both platforms correctly.
-
-Always pair `KeyboardAvoidingView` with `style={{ flex: 1 }}` so it fills the available space.
-
-## Dismiss keyboard on tap
-
-Users expect to close the keyboard by tapping anywhere outside the input. React Native does not do this automatically.
+## Example: cross-platform keyboard-safe layout
 
 ```tsx
-import { TouchableWithoutFeedback, Keyboard } from "react-native";
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TextInput,
+  TouchableWithoutFeedback,
+  View,
+} from "react-native";
 
-<TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-  <View style={{ flex: 1 }}>
-    {/* Screen content */}
-  </View>
-</TouchableWithoutFeedback>
+export default function FormScreen() {
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          contentContainerStyle={{ padding: 16 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <TextInput placeholder="Email" style={{ marginBottom: 12 }} />
+          <TextInput placeholder="Password" secureTextEntry />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
+  );
+}
 ```
 
-`TouchableWithoutFeedback` captures the tap without showing any visual feedback (no ripple, no opacity change). It wraps the entire screen so any tap outside the input triggers `Keyboard.dismiss`.
+## Use cases
 
-`Keyboard.dismiss` is a static method — no hook needed.
+- login/signup forms
+- checkout address forms
+- search/filter screens
+- messaging composer interfaces
 
-## Combining both
+## UX recommendations
 
-Wrap in this order: `TouchableWithoutFeedback` on the outside (catches taps), `KeyboardAvoidingView` on the inside (adjusts layout).
+- auto-focus only where it clearly helps
+- keep primary action visible while typing
+- use appropriate keyboard type (`email-address`, `numeric`, etc.)
+- set return key intent (`next`, `done`, `search`)
+
+## Common pitfalls
+
+- missing `flex: 1` on wrapper views
+- no tap-to-dismiss behavior
+- submit buttons hidden behind keyboard
+- nested scroll + keyboard conflicts
+
+## Extra patterns
+
+## Example: chained form focus
 
 ```tsx
-<TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-  <KeyboardAvoidingView
-    behavior={Platform.OS === "ios" ? "padding" : "height"}
-    style={{ flex: 1 }}
-  >
-    <ScrollView keyboardShouldPersistTaps="handled">
-      {/* Content */}
-    </ScrollView>
-  </KeyboardAvoidingView>
-</TouchableWithoutFeedback>
+const emailRef = useRef<TextInput>(null);
+const passwordRef = useRef<TextInput>(null);
+
+<TextInput
+  ref={emailRef}
+  returnKeyType="next"
+  onSubmitEditing={() => passwordRef.current?.focus()}
+/>
+
+<TextInput
+  ref={passwordRef}
+  returnKeyType="done"
+  onSubmitEditing={handleSubmit}
+/>
 ```
 
-`keyboardShouldPersistTaps="handled"` on `ScrollView` ensures taps on buttons inside the scroll view still fire even while the keyboard is open, instead of just dismissing the keyboard and eating the tap.
+## Accessibility notes
 
-## Where this is used in SolScan
-
-Applied in `app/(tabs)/index.tsx` around the entire wallet explorer screen. The search input is near the top, so keyboard overlap is not severe here, but the pattern is correct for any screen that has inputs.
-
-## Quick reference
-
-| Component                   | What it does                              |
-|-----------------------------|-------------------------------------------|
-| `KeyboardAvoidingView`      | Moves content above the keyboard          |
-| `TouchableWithoutFeedback`  | Catches taps without visual feedback      |
-| `Keyboard.dismiss`          | Programmatically hides the keyboard       |
-| `keyboardShouldPersistTaps` | Controls scroll view tap behavior         |
-| `Platform.OS`               | `"ios"` or `"android"` at runtime        |
+- ensure labels/placeholder meaning is clear
+- avoid layouts that jump unpredictably on keyboard open
+- keep error text readable and close to corresponding input
