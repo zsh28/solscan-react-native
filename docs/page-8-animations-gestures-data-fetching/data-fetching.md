@@ -1,160 +1,348 @@
-# Data Fetching - Technical Notes (TanStack Query)
+# Data Fetching - Detailed Technical Notes (TanStack Query)
 
-## Why TanStack Query in this app
+## The core problem TanStack Query solves
 
-The wallet screen originally used imperative fetching logic (`useState` + direct RPC calls + manual loading/error handling). That pattern works for simple flows, but scales poorly for repeated fetches, cache reuse, and stale data updates.
+Most apps start with `useEffect + fetch + useState`. This works at first, but quickly creates repeated boilerplate and subtle bugs:
 
-TanStack Query provides:
+- duplicate requests from multiple components
+- inconsistent loading/error handling
+- stale data after navigation
+- manual cache logic scattered across files
 
-- request deduplication
-- normalized query lifecycle state
-- stale/fresh caching windows
-- easy manual refetch for user-triggered refresh
+TanStack Query treats server data as a first-class cache with lifecycle rules.
 
-This is especially useful for wallet lookups where users may revisit addresses frequently.
+## Server state vs client state
 
-## Setup implemented
+Important distinction:
 
-### Dependency
+- Client state: local UI state (toggles, modals, form drafts)
+- Server state: remote data that can change outside your app
 
-Installed:
+TanStack Query is for server state.
 
-```bash
-npx expo install @tanstack/react-query
-```
+## Core architecture concepts
 
-### App provider and defaults
-
-Configured in `app/_layout.tsx`:
+## Example: provider setup
 
 ```tsx
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000,
-      gcTime: 5 * 60 * 1000,
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
       retry: 2,
       refetchOnWindowFocus: false,
     },
   },
 });
+
+export default function AppRoot() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  );
+}
 ```
 
-Provider placement:
+Use when:
+
+- you want consistent data policy across all screens
+- you need shared caching for repeated navigation paths
+
+## Query client
+
+Global manager for cache, retries, garbage collection, and defaults.
+
+Typical defaults to tune:
+
+- `staleTime` (freshness window)
+- `gcTime` (cache retention)
+- `retry` (failure resilience)
+- refetch behavior on focus/reconnect
+
+## Query key
+
+A stable identifier for cached data.
+
+Good key design should include all inputs that change the response, for example:
+
+- entity id
+- active environment/network
+- filter/sort params
+- pagination cursor/page
+
+Poor keys cause cache collisions and incorrect UI.
+
+## Query function
+
+Pure async function that fetches data for the key.
+
+Best practices:
+
+- throw on API errors
+- keep transformation predictable
+- avoid side effects
+
+## Core query lifecycle states
+
+- `isLoading`: first load, no cached data yet
+- `isFetching`: network request in flight (including background refresh)
+- `isError`: request failed
+- `data`: successful response payload
+
+Use this model to simplify UI decisions.
+
+## Caching strategy in real products
+
+## Freshness (`staleTime`)
+
+How long data is treated as fresh.
+
+Examples:
+
+- live market quote: 2 to 10 seconds
+- wallet balance: 10 to 60 seconds
+- profile metadata: minutes to hours
+
+## Garbage collection (`gcTime`)
+
+How long inactive cache remains in memory.
+
+Examples:
+
+- high-navigation apps: 5 to 15 minutes often works well
+- memory-constrained contexts: shorter windows
+
+## Deduplication
+
+If two components ask for same key at same time, TanStack Query reuses one request.
+
+Benefit: less network traffic and fewer race conditions.
+
+## Query patterns and use cases
+
+## Example: custom query hook
 
 ```tsx
-<QueryClientProvider client={queryClient}>
-  {/* app tree */}
-</QueryClientProvider>
+import { useQuery } from "@tanstack/react-query";
+
+async function fetchUserProfile(userId: string) {
+  const res = await fetch(`https://api.example.com/users/${userId}`);
+  if (!res.ok) throw new Error("Failed to fetch user profile");
+  return res.json();
+}
+
+export function useUserProfile(userId: string) {
+  return useQuery({
+    queryKey: ["user-profile", userId],
+    queryFn: () => fetchUserProfile(userId),
+    enabled: !!userId,
+    staleTime: 60_000,
+  });
+}
 ```
 
-Rationale for these defaults:
+Use when:
 
-- `staleTime: 30s`: balance/transactions are fresh enough for exploration UI.
-- `gcTime: 5m`: recent wallets remain cached when navigating between tabs.
-- `retry: 2`: transient RPC errors get automatic retry without infinite loops.
-- `refetchOnWindowFocus: false`: prevents noisy mobile refetch behavior on app focus transitions.
+- multiple components need same entity data
+- you want fetch logic reusable and testable
 
-## Hook design in `hooks/useSolanaQueries.ts`
+## Example: query usage in component
 
-This file centralizes read-only Solana RPC queries and keeps screen components declarative.
+```tsx
+function ProfileScreen({ userId }: { userId: string }) {
+  const { data, isLoading, isError, error, refetch, isFetching } = useUserProfile(userId);
 
-## Shared RPC helper
+  if (isLoading) return <ProfileSkeleton />;
+  if (isError) return <ErrorState message={(error as Error).message} onRetry={refetch} />;
 
-All hooks use:
-
-```ts
-rpc(endpoint, method, params)
+  return (
+    <View>
+      <Text>{data.name}</Text>
+      {isFetching ? <Text>Refreshing...</Text> : null}
+    </View>
+  );
+}
 ```
 
-Behavior:
+Use when:
 
-- Sends JSON-RPC payload
-- Throws on `json.error`
-- Returns `json.result`
+- you need clear UI for first load vs background refresh
+- retry action should be explicit and user-controlled
 
-This gives consistent error semantics across hooks.
+## Standard query (`useQuery`)
 
-## Query hooks
+Use for:
 
-### `useWalletBalance(address, endpoint)`
+- profile
+- account balances
+- settings
+- summary cards
 
-- Key: `['wallet-balance', endpoint, address]`
-- Method: `getBalance`
-- Converts lamports -> SOL
-- Enabled only when address exists
+## Conditional query (`enabled`)
 
-### `useTokenAccounts(address, endpoint)`
+Use when query depends on user input or auth state.
 
-- Key: `['token-accounts', endpoint, address]`
-- Method: `getTokenAccountsByOwner`
-- Filters to positive balances
-- Per-hook `staleTime: 60s` because token set changes less frequently than tx feed
+Examples:
 
-### `useRecentTransactions(address, endpoint)`
+- fetch wallet only after address exists
+- fetch private data only after token is ready
 
-- Key: `['recent-transactions', endpoint, address]`
-- Method: `getSignaturesForAddress` (limit 10)
-- Normalizes output to `{ sig, time, ok }`
-- Per-hook `staleTime: 15s` for faster freshness
+## Polling/refetch interval
 
-## Query key strategy
+Use for near-real-time data where websocket is not needed.
 
-Including both `endpoint` and `address` in keys prevents cache collisions:
+Examples:
 
-- same wallet on devnet vs mainnet should not share cache
-- different wallets on same network should not share cache
+- price ticker
+- status monitor
 
-This is critical because the app supports network toggling.
+Apply carefully to avoid excessive battery/data usage.
 
-## Screen migration in `app/(tabs)/index.tsx`
+## Infinite query (`useInfiniteQuery`)
 
-The screen now has two states:
+Use for cursor-based feeds:
 
-1. `address` (input field draft)
-2. `searchedAddress` (active query target)
+- transactions
+- notifications
+- social timelines
 
-Flow:
+## Mutations for write operations
 
-1. User types address
-2. Presses Search
-3. `searchedAddress` updates
-4. Query hooks run automatically (`enabled` condition passes)
-5. UI renders from query state (`isLoading`, `data`, `error`)
+## Example: mutation with invalidation
 
-If user searches the same address again, code explicitly calls:
+```tsx
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-```ts
-await Promise.all([
-  balanceQuery.refetch(),
-  tokensQuery.refetch(),
-  txnsQuery.refetch(),
-]);
+async function updateDisplayName(userId: string, name: string) {
+  const res = await fetch(`https://api.example.com/users/${userId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error("Failed to update profile");
+  return res.json();
+}
+
+export function useUpdateDisplayName(userId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (name: string) => updateDisplayName(userId, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-profile", userId] });
+      queryClient.invalidateQueries({ queryKey: ["team-members"] });
+    },
+  });
+}
 ```
 
-This preserves expected manual refresh behavior.
+Use when:
 
-## Feature-level benefits realized
+- write action changes multiple read models
+- you want reliable consistency after submit
 
-- Less screen-local boilerplate for fetch lifecycle
-- Better resilience against duplicate requests
-- Network-aware cache segmentation
-- Cleaner rendering logic based on query-derived state
+## Example: infinite query for cursor pagination
 
-## Current scope and future extension
+```tsx
+import { useInfiniteQuery } from "@tanstack/react-query";
 
-Current implementation focuses on read operations (queries). For write operations (send/swap mutations), next step would be `useMutation` plus targeted cache invalidation.
+async function fetchFeed(cursor?: string) {
+  const res = await fetch(`https://api.example.com/feed?cursor=${cursor ?? ""}`);
+  if (!res.ok) throw new Error("Failed to fetch feed");
+  return res.json() as Promise<{ items: Array<{ id: string; title: string }>; nextCursor?: string }>;
+}
 
-Examples of follow-up invalidation patterns:
+export function useFeed() {
+  return useInfiniteQuery({
+    queryKey: ["feed"],
+    queryFn: ({ pageParam }) => fetchFeed(pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  });
+}
+```
 
-- invalidate `['wallet-balance', endpoint, address]` after successful send
-- invalidate `['recent-transactions', endpoint, address]` after transaction submission
+Use when:
 
-## Troubleshooting
+- datasets are large and loaded progressively
+- scroll-based consumption is primary UX
 
-If data appears stale/unexpected:
+Use `useMutation` for actions that change remote state:
 
-1. Verify query key includes both address and endpoint.
-2. Check `enabled` conditions for empty address edge cases.
-3. Adjust per-hook `staleTime` if refresh cadence should be faster.
-4. Use explicit `refetch()` for user-initiated hard refresh actions.
+- send transaction
+- create/update/delete resources
+- submit forms
+
+Important mutation practices:
+
+- optimistic update only when rollback is clear
+- invalidate related queries on success
+- surface user-friendly error state
+
+## Invalidation strategy
+
+After a successful write, invalidate keys impacted by that write.
+
+Examples:
+
+- sending funds -> invalidate account balance + recent activity
+- adding item -> invalidate item list + aggregate counters
+
+Avoid invalidating broad keys unnecessarily.
+
+## Error handling model
+
+Recommended layers:
+
+1. Query function throws typed errors
+2. Query handles retries for transient failures
+3. UI presents actionable messages
+4. Logging/monitoring captures failure context
+
+Differentiate:
+
+- network timeout
+- auth/session issue
+- validation error
+- server/internal error
+
+## UX guidance for loading states
+
+- Show skeletons for first load where possible
+- Keep previous data during background refetch when useful
+- Avoid full-screen spinners for minor refreshes
+- Provide manual retry affordance for hard failures
+
+## Performance best practices
+
+- Keep query keys stable and serializable.
+- Avoid creating dynamic object literals inline for keys if they can vary by reference.
+- Normalize API payload shape in query layer.
+- Keep expensive transformations memoized or server-side.
+
+## Testing strategy
+
+- Unit-test query functions (success/failure transformations).
+- Integration-test loading/error/success UI states.
+- Test invalidation flow after mutations.
+- Test stale/fresh behavior around navigation cycles.
+
+## Common anti-patterns
+
+- Using TanStack Query for purely local UI state
+- Unstable query keys that change each render
+- Disabling retries globally without reason
+- Over-invalidating entire cache after small mutation
+- Ignoring `enabled` and firing queries with incomplete params
+
+## Production checklist
+
+1. Query key conventions documented.
+2. Default stale/cache values chosen by data type.
+3. Retry policy aligned with API reliability.
+4. Mutation invalidation map defined.
+5. Loading and error UX consistent across screens.
