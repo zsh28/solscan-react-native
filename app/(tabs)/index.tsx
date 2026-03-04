@@ -1,10 +1,10 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   FlatList,
   ScrollView,
   ActivityIndicator,
@@ -15,13 +15,27 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   Platform,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { useWalletStore } from "../../stores/wallet-store";
 import { FavoriteButton } from "../../components/FavoriteButton";
 import { ConnectButton } from "../../components/ConnectButton";
 import { useWallet } from "../../context/WalletContext";
+import {
+  useRecentTransactions,
+  useTokenAccounts,
+  useWalletBalance,
+} from "../../hooks/useSolanaQueries";
 
 // ============================================
 // Solana RPC
@@ -30,45 +44,6 @@ import { useWallet } from "../../context/WalletContext";
 // RPC endpoint is driven by the global devnet toggle.
 const MAINNET = "https://api.mainnet-beta.solana.com";
 const DEVNET  = "https://api.devnet.solana.com";
-
-const rpc = async (endpoint: string, method: string, params: any[]) => {
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const json = await res.json();
-  if (json.error) throw new Error(json.error.message);
-  return json.result;
-};
-
-const getBalance = async (endpoint: string, addr: string) => {
-  const result = await rpc(endpoint, "getBalance", [addr]);
-  return result.value / 1_000_000_000;
-};
-
-const getTokens = async (endpoint: string, addr: string) => {
-  const result = await rpc(endpoint, "getTokenAccountsByOwner", [
-    addr,
-    { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
-    { encoding: "jsonParsed" },
-  ]);
-  return (result.value || [])
-    .map((a: any) => ({
-      mint: a.account.data.parsed.info.mint,
-      amount: a.account.data.parsed.info.tokenAmount.uiAmount,
-    }))
-    .filter((t: any) => t.amount > 0);
-};
-
-const getTxns = async (endpoint: string, addr: string) => {
-  const sigs = await rpc(endpoint, "getSignaturesForAddress", [addr, { limit: 10 }]);
-  return sigs.map((s: any) => ({
-    sig: s.signature,
-    time: s.blockTime,
-    ok: !s.err,
-  }));
-};
 
 // ============================================
 // Helpers
@@ -83,6 +58,42 @@ const timeAgo = (ts: number) => {
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
   return `${Math.floor(sec / 86400)}d ago`;
 };
+
+function ScalePressable({
+  onPress,
+  disabled,
+  style,
+  children,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        disabled={disabled}
+        style={style}
+        onPress={onPress}
+        onPressIn={() => {
+          scale.value = withTiming(0.97, { duration: 80 });
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { damping: 15 });
+        }}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 // ============================================
 // Wallet Screen (default route for /(tabs))
@@ -101,15 +112,27 @@ export default function WalletScreen() {
 
   const RPC = isDevnet ? DEVNET : MAINNET;
 
-  // Local screen state.
+  // Local input state.
   const [address, setAddress] = useState("");
-  const [loading, setLoading]  = useState(false);
-  const [balance, setBalance]  = useState<number | null>(null);
-  const [tokens, setTokens]    = useState<any[]>([]);
-  const [txns, setTxns]        = useState<any[]>([]);
-
-  // The wallet address that produced the current results (used for FavoriteButton).
+  // The searched wallet address that drives all queries.
   const [searchedAddress, setSearchedAddress] = useState("");
+
+  const balanceQuery = useWalletBalance(searchedAddress, RPC);
+  const tokensQuery = useTokenAccounts(searchedAddress, RPC);
+  const txnsQuery = useRecentTransactions(searchedAddress, RPC);
+
+  const loading =
+    searchedAddress.length > 0 &&
+    (balanceQuery.isLoading || tokensQuery.isLoading || txnsQuery.isLoading);
+
+  const balance = balanceQuery.data ?? null;
+  const tokens = tokensQuery.data ?? [];
+  const txns = txnsQuery.data ?? [];
+  const queryError =
+    (balanceQuery.error as Error | null)?.message ||
+    (tokensQuery.error as Error | null)?.message ||
+    (txnsQuery.error as Error | null)?.message ||
+    null;
 
   const search = async (addr?: string) => {
     const target = (addr ?? address).trim();
@@ -118,22 +141,17 @@ export default function WalletScreen() {
     // Sync input field when called from history tap.
     if (addr) setAddress(addr);
 
-    setLoading(true);
-    try {
-      const [bal, tok, tx] = await Promise.all([
-        getBalance(RPC, target),
-        getTokens(RPC, target),
-        getTxns(RPC, target),
+    if (target === searchedAddress) {
+      await Promise.all([
+        balanceQuery.refetch(),
+        tokensQuery.refetch(),
+        txnsQuery.refetch(),
       ]);
-      setBalance(bal);
-      setTokens(tok);
-      setTxns(tx);
-      setSearchedAddress(target);
-      addToHistory(target); // persist to global store
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+      return;
     }
-    setLoading(false);
+
+    setSearchedAddress(target);
+    addToHistory(target);
   };
 
   const tryExample = () => {
@@ -172,13 +190,13 @@ export default function WalletScreen() {
               onDisconnect={wallet.disconnect}
             />
             {wallet.connected && (
-              <TouchableOpacity
+              <Pressable
                 style={s.sendBtn}
                 onPress={() => router.push("/send")}
               >
                 <Ionicons name="paper-plane-outline" size={16} color="#9945FF" />
                 <Text style={s.sendBtnText}>Send</Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
 
@@ -200,7 +218,7 @@ export default function WalletScreen() {
           </View>
 
           <View style={s.btnRow}>
-            <TouchableOpacity
+            <ScalePressable
               style={[s.btn, loading && s.btnDisabled]}
               onPress={() => search()}
               disabled={loading}
@@ -210,19 +228,23 @@ export default function WalletScreen() {
               ) : (
                 <Text style={s.btnText}>Search</Text>
               )}
-            </TouchableOpacity>
+            </ScalePressable>
 
-            <TouchableOpacity style={s.btnGhost} onPress={tryExample}>
+            <ScalePressable style={s.btnGhost} onPress={tryExample}>
               <Text style={s.btnGhostText}>Demo</Text>
-            </TouchableOpacity>
+            </ScalePressable>
           </View>
 
+          {queryError && (
+            <Text style={s.errorText}>RPC Error: {queryError}</Text>
+          )}
+
           {/* Search history — shown when there are no current results yet. */}
-          {searchHistory.length > 0 && balance === null && (
+          {searchHistory.length > 0 && searchedAddress.length === 0 && (
             <View style={s.historySection}>
               <Text style={s.historyTitle}>Recent Searches</Text>
               {searchHistory.slice(0, 5).map((addr) => (
-                <TouchableOpacity
+                <ScalePressable
                   key={addr}
                   style={s.historyItem}
                   onPress={() => search(addr)}
@@ -231,14 +253,14 @@ export default function WalletScreen() {
                     {short(addr, 8)}
                   </Text>
                   <Text style={s.historyArrow}>›</Text>
-                </TouchableOpacity>
+                </ScalePressable>
               ))}
             </View>
           )}
 
           {/* Balance card with favorite button. */}
           {balance !== null && (
-            <View style={s.card}>
+            <Animated.View entering={FadeInDown.springify()} style={s.card}>
               <View style={s.cardHeader}>
                 <Text style={s.label}>SOL Balance</Text>
                 <FavoriteButton address={searchedAddress} />
@@ -248,7 +270,7 @@ export default function WalletScreen() {
                 <Text style={s.sol}>SOL</Text>
               </View>
               <Text style={s.addr}>{short(searchedAddress, 6)}</Text>
-            </View>
+            </Animated.View>
           )}
 
           {tokens.length > 0 && (
@@ -258,19 +280,23 @@ export default function WalletScreen() {
                 data={tokens}
                 keyExtractor={(t) => t.mint}
                 scrollEnabled={false}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={s.row}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/token/[mint]",
-                        params: { mint: item.mint },
-                      })
-                    }
+                renderItem={({ item, index }) => (
+                  <Animated.View
+                    entering={FadeInDown.delay(index * 70).springify()}
                   >
-                    <Text style={s.mint}>{short(item.mint, 6)}</Text>
-                    <Text style={s.amount}>{item.amount}</Text>
-                  </TouchableOpacity>
+                    <Pressable
+                      style={s.row}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/token/[mint]",
+                          params: { mint: item.mint },
+                        })
+                      }
+                    >
+                      <Text style={s.mint}>{short(item.mint, 6)}</Text>
+                      <Text style={s.amount}>{item.amount}</Text>
+                    </Pressable>
+                  </Animated.View>
                 )}
               />
             </>
@@ -283,23 +309,27 @@ export default function WalletScreen() {
                 data={txns}
                 keyExtractor={(t) => t.sig}
                 scrollEnabled={false}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={s.row}
-                    onPress={() =>
-                      Linking.openURL(`https://solscan.io/tx/${item.sig}`)
-                    }
+                renderItem={({ item, index }) => (
+                  <Animated.View
+                    entering={FadeInDown.delay(index * 50).springify()}
                   >
-                    <View>
-                      <Text style={s.mint}>{short(item.sig, 8)}</Text>
-                      <Text style={s.time}>
-                        {item.time ? timeAgo(item.time) : "pending"}
+                    <Pressable
+                      style={s.row}
+                      onPress={() =>
+                        Linking.openURL(`https://solscan.io/tx/${item.sig}`)
+                      }
+                    >
+                      <View>
+                        <Text style={s.mint}>{short(item.sig, 8)}</Text>
+                        <Text style={s.time}>
+                          {item.time ? timeAgo(item.time) : "pending"}
+                        </Text>
+                      </View>
+                      <Text style={{ color: item.ok ? "#14F195" : "#EF4444", fontSize: 18 }}>
+                        {item.ok ? "+" : "-"}
                       </Text>
-                    </View>
-                    <Text style={{ color: item.ok ? "#14F195" : "#EF4444", fontSize: 18 }}>
-                      {item.ok ? "+" : "-"}
-                    </Text>
-                  </TouchableOpacity>
+                    </Pressable>
+                  </Animated.View>
                 )}
               />
             </>
@@ -395,6 +425,11 @@ const s = StyleSheet.create({
   btnGhostText: {
     color: "#9CA3AF",
     fontSize: 15,
+  },
+  errorText: {
+    color: "#EF4444",
+    marginTop: 10,
+    fontSize: 13,
   },
   historySection: {
     marginTop: 24,

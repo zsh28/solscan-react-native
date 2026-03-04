@@ -5,20 +5,90 @@ import {
   StyleSheet,
   Text,
   View,
-  TouchableOpacity,
   FlatList,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  FadeInDown,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { useWalletStore } from "../../stores/wallet-store";
 
 interface WatchlistItem {
   address: string;
   balance: number | null;
   loading: boolean;
+}
+
+function SwipeableRow({
+  item,
+  onDelete,
+}: {
+  item: WatchlistItem;
+  onDelete: (address: string) => void;
+}) {
+  const translateX = useSharedValue(0);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .onUpdate((event) => {
+      translateX.value = Math.min(0, event.translationX);
+    })
+    .onEnd(() => {
+      if (translateX.value < -110) {
+        translateX.value = withSpring(-260);
+        runOnJS(onDelete)(item.address);
+      } else {
+        translateX.value = withSpring(0);
+      }
+    });
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const deleteStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.abs(translateX.value) / 100),
+  }));
+
+  return (
+    <View style={s.rowContainer}>
+      <Animated.View style={[s.deleteBackground, deleteStyle]}>
+        <Ionicons name="trash-outline" size={16} color="#FFFFFF" />
+        <Text style={s.deleteText}>Delete</Text>
+      </Animated.View>
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={cardStyle}>
+          <View style={s.card}>
+            <View style={s.cardLeft}>
+              <View style={s.iconBox}>
+                <Ionicons name="wallet" size={20} color="#14F195" />
+              </View>
+              <Text style={s.cardAddress} numberOfLines={1}>
+                {item.address.slice(0, 6)}...{item.address.slice(-4)}
+              </Text>
+            </View>
+            <View style={s.cardRight}>
+              {item.loading ? (
+                <ActivityIndicator size="small" color="#14F195" />
+              ) : item.balance !== null ? (
+                <Text style={s.cardBalance}>{item.balance.toFixed(4)} SOL</Text>
+              ) : (
+                <Text style={s.cardError}>Error</Text>
+              )}
+            </View>
+          </View>
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
 }
 
 export default function WatchlistScreen() {
@@ -79,9 +149,6 @@ export default function WatchlistScreen() {
     setRefreshing(false);
   };
 
-  const shortenAddress = (addr: string) =>
-    `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-
   return (
     <SafeAreaView style={s.safe} edges={["top"]}>
       <View style={s.container}>
@@ -100,10 +167,10 @@ export default function WatchlistScreen() {
             </Text>
           </View>
         ) : (
-          <FlatList
-            data={items}
-            keyExtractor={(item) => item.address}
-            contentContainerStyle={{ paddingBottom: 100 }}
+            <FlatList
+              data={items}
+              keyExtractor={(item) => item.address}
+              contentContainerStyle={{ paddingBottom: 100 }}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -112,48 +179,14 @@ export default function WatchlistScreen() {
                 colors={["#14F195"]}
               />
             }
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={s.card}
-                onLongPress={() => {
-                  Alert.alert(
-                    "Remove from Watchlist?",
-                    shortenAddress(item.address),
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Remove",
-                        style: "destructive",
-                        onPress: () => removeFavorite(item.address),
-                      },
-                    ]
-                  );
-                }}
-              >
-                <View style={s.cardLeft}>
-                  <View style={s.iconBox}>
-                    <Ionicons name="wallet" size={20} color="#14F195" />
-                  </View>
-                  <Text style={s.cardAddress} numberOfLines={1}>
-                    {shortenAddress(item.address)}
-                  </Text>
-                </View>
-                <View style={s.cardRight}>
-                  {item.loading ? (
-                    <ActivityIndicator size="small" color="#14F195" />
-                  ) : item.balance !== null ? (
-                    <Text style={s.cardBalance}>
-                      {item.balance.toFixed(4)} SOL
-                    </Text>
-                  ) : (
-                    <Text style={s.cardError}>Error</Text>
-                  )}
-                </View>
-              </TouchableOpacity>
-            )}
-          />
-        )}
-      </View>
+              renderItem={({ item, index }) => (
+                <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
+                  <SwipeableRow item={item} onDelete={removeFavorite} />
+                </Animated.View>
+              )}
+            />
+          )}
+        </View>
     </SafeAreaView>
   );
 }
@@ -208,10 +241,31 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#2A2A35",
     padding: 16,
-    marginBottom: 10,
+    marginBottom: 0,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  rowContainer: {
+    marginBottom: 10,
+  },
+  deleteBackground: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 110,
+    borderRadius: 14,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  deleteText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 13,
   },
   cardLeft: {
     flexDirection: "row",
