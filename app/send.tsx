@@ -21,6 +21,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useWallet } from "../context/WalletContext";
+import {
+  notifyTransactionConfirmed,
+  notifyTransactionSent,
+} from "../utils/notifications";
+import { safeAsync } from "../utils/safeAsync";
 
 export default function SendScreen() {
   const router = useRouter();
@@ -45,18 +50,24 @@ export default function SendScreen() {
           style: "destructive",
           onPress: async () => {
             setSending(true);
-            try {
-              const sig = await sendSol(toAddress.trim(), sol);
-              Alert.alert(
-                "Sent!",
-                `Transaction confirmed.\n\n${sig.slice(0, 16)}...`,
-                [{ text: "OK", onPress: () => router.back() }]
-              );
-            } catch (e: any) {
-              Alert.alert("Failed", e.message);
-            } finally {
-              setSending(false);
+            const sig = await safeAsync(async () => {
+              await notifyTransactionSent(sol);
+              const signature = await sendSol(toAddress.trim(), sol);
+              await notifyTransactionConfirmed(signature);
+              return signature;
+            }, (error) => {
+              Alert.alert("Failed", error.message);
+            });
+
+            if (sig) {
+               Alert.alert(
+                 "Sent!",
+                 `Transaction confirmed.\n\n${sig.slice(0, 16)}...`,
+                 [{ text: "OK", onPress: () => router.back() }]
+               );
             }
+
+            setSending(false);
           },
         },
       ]

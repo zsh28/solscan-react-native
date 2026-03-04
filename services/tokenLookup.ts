@@ -9,6 +9,7 @@
 //   Comma-separate up to 100 mint addresses for a multi-mint lookup.
 
 import { type CustomToken } from "../stores/wallet-store";
+import config from "../config/env";
 
 // ─── v2 schema types ─────────────────────────────────────────────────────────
 
@@ -53,7 +54,7 @@ export interface MintInformation {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const SEARCH_URL = "https://lite-api.jup.ag/ultra/v1/search";
+const SEARCH_URL = config.jupiter.tokenSearchUrl;
 
 const FALLBACK_COLORS = [
   "#9945FF", "#14F195", "#2775CA", "#F7931A",

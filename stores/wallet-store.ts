@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import config from "../config/env";
 import { mmkvStorage } from "../lib/storage";
 
 // ============================================
@@ -49,7 +50,7 @@ export const useWalletStore = create<WalletState>()(
       // Initial values — overwritten by persisted data on rehydration.
       favorites: [],
       searchHistory: [],
-      isDevnet: false,
+      isDevnet: config.solana.network === "devnet",
       customTokens: [],
       _hasHydrated: false,
 

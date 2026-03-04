@@ -1,0 +1,23 @@
+{
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "env": {
+        "EXPO_PUBLIC_SOLANA_NETWORK": "devnet",
+        "EXPO_PUBLIC_ENABLE_NOTIFICATIONS": "true"
+      }
+    },
+    "preview": {
+      "env": {
+        "EXPO_PUBLIC_SOLANA_NETWORK": "devnet",
+        "EXPO_PUBLIC_ENABLE_NOTIFICATIONS": "true"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_SOLANA_NETWORK": "mainnet-beta",
+        "EXPO_PUBLIC_ENABLE_NOTIFICATIONS": "true"
+      }
+    }
+  }
+}

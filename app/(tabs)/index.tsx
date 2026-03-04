@@ -36,14 +36,15 @@ import {
   useTokenAccounts,
   useWalletBalance,
 } from "../../hooks/useSolanaQueries";
+import { getRpcEndpoint } from "../../config/env";
 
 // ============================================
 // Solana RPC
 // ============================================
 
 // RPC endpoint is driven by the global devnet toggle.
-const MAINNET = "https://api.mainnet-beta.solana.com";
-const DEVNET  = "https://api.devnet.solana.com";
+const MAINNET = getRpcEndpoint(false);
+const DEVNET  = getRpcEndpoint(true);
 
 // ============================================
 // Helpers

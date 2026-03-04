@@ -2,6 +2,8 @@
 // Jupiter Aggregator v6 API helpers.
 // Docs: https://station.jup.ag/docs/apis/swap-api
 
+import config from "../config/env";
+
 // ─── Token registry ───────────────────────────────────────────────────────────
 
 export const TOKENS = {
@@ -110,7 +112,7 @@ export function fromSmallestUnit(amount: number | string, decimals: number): str
 
 // ─── Jupiter API ──────────────────────────────────────────────────────────────
 
-const BASE_URL = "https://lite-api.jup.ag/swap/v1";
+const BASE_URL = config.jupiter.apiUrl;
 
 export interface SwapQuote {
   inputMint: string;

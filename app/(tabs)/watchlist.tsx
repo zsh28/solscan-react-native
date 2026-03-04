@@ -19,6 +19,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { getRpcEndpoint } from "../../config/env";
 import { useWalletStore } from "../../stores/wallet-store";
 
 interface WatchlistItem {
@@ -99,9 +100,7 @@ export default function WatchlistScreen() {
   const [items, setItems]           = useState<WatchlistItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const RPC = isDevnet
-    ? "https://api.devnet.solana.com"
-    : "https://api.mainnet-beta.solana.com";
+  const RPC = getRpcEndpoint(isDevnet);
 
   const fetchBalances = useCallback(async () => {
     const results = await Promise.all(
