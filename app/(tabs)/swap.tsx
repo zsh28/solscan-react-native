@@ -328,7 +328,7 @@ export default function SwapScreen() {
         setQuote(result);
       } else {
         setQuote(null);
-        setQuoteError("No route found for this pair");
+        setQuoteError("No route found or Jupiter quote service unavailable");
       }
     },
     []
@@ -365,9 +365,13 @@ export default function SwapScreen() {
   // ── Swap ───────────────────────────────────────────────────────────────────
 
   const handleSwap = async () => {
-    if (!connected || !address) {
-      Alert.alert("Connect Wallet", "Connect your Phantom wallet first.");
-      return;
+    let userAddress = address;
+    if (!connected || !userAddress) {
+      userAddress = await connect();
+      if (!userAddress) {
+        Alert.alert("Connect Wallet", "Connect your Phantom wallet first.");
+        return;
+      }
     }
     if (!quote) {
       Alert.alert("No Quote", "Wait for a quote before swapping.");
@@ -375,7 +379,7 @@ export default function SwapScreen() {
     }
     setSwapping(true);
     try {
-      const txResult = await getSwapTransaction({ quote, userPublicKey: address });
+      const txResult = await getSwapTransaction({ quote, userPublicKey: userAddress });
       if (!txResult) throw new Error("Failed to build swap transaction");
       const sig = await signAndSendVersioned(txResult.swapTransaction);
       Alert.alert(

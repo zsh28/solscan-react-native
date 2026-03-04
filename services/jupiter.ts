@@ -110,7 +110,7 @@ export function fromSmallestUnit(amount: number | string, decimals: number): str
 
 // ─── Jupiter API ──────────────────────────────────────────────────────────────
 
-const BASE_URL = "https://quote-api.jup.ag/v6";
+const BASE_URL = "https://lite-api.jup.ag/swap/v1";
 
 export interface SwapQuote {
   inputMint: string;
